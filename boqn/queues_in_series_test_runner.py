@@ -1,18 +1,34 @@
-import torch
+import os
+import sys
 import numpy as np
-from botorch.exceptions import BadInitialCandidatesWarning
-import warnings
-warnings.filterwarnings('ignore', category=BadInitialCandidatesWarning)
-warnings.filterwarnings('ignore', category=RuntimeWarning)
+import torch
+torch.set_default_dtype(torch.float64)
+import botorch
+from botorch.settings import debug
+debug._set_state(True)
+
+# Get script directory
+script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
+project_path = script_dir[:-5]
+results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
 from queues_in_series import queues_in_series
+from dag import DAG
 simulator_seed = 1
 nqueues = 3
-simulator = queues_in_series(nqueues=nqueues, arrival_rate=1., seed=simulator_seed)
-from dag import DAG
-dag= DAG([[], [0], [1]])
-indices_X = [[0], [1], [2]]
+test_problem = 'queues_in_series_' + str(nqueues)
+    # Define network structure
+dag_as_list = []
+dag_as_list.append([])
+for k in range(nqueues - 1):
+    dag_as_list.append([k])
+dag= DAG(dag_as_list)
+
+indices_X = []
+for k in range(nqueues):
+    indices_X.append([k])  
+
 
 # EI-QN especifics
 from botorch.acquisition.objective import GenericMCObjective
@@ -23,26 +39,27 @@ from botorch.sampling.samplers import SobolQMCNormalSampler
 g_mapping = lambda Y: Y[..., -1]
 g = GenericMCObjective(g_mapping)
 
-def output_for_eiqn(simulator_output):
+def output_for_EIQN(simulator_output):
     return simulator_output[..., 0]
 
-MC_SAMPLES = 128
+MC_SAMPLES = 512
 BATCH_SIZE = 1
 
 # EI especifics
-from botorch.models import SingleTaskGP, HeteroskedasticSingleTaskGP
+from botorch.models import FixedNoiseGP, HeteroskedasticSingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition import ExpectedImprovement
 from botorch import fit_gpytorch_model
+from botorch.models.transforms import Standardize
 
-def output_for_ei(simulator_output):
+def output_for_EI(simulator_output):
     return simulator_output[...,[-1], 0]
 
 
-def initialize_model(train_X, train_Y, train_Yvar=None, state_dict=None):
+def initialize_model(X, Y, Yvar=None, state_dict=None):
     # define model
-    #model = HeteroskedasticSingleTaskGP(train_X, train_Y, train_Yvar)
-    model = SingleTaskGP(train_X, train_Y)
+    #model = HeteroskedasticSingleTaskGP(X, Y, Yvar)
+    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     # load state dict if it is passed
     if state_dict is not None:
@@ -50,163 +67,147 @@ def initialize_model(train_X, train_Y, train_Yvar=None, state_dict=None):
     return mll, model
 
 # Random especifics
-def update_random_observations(best_random):
+def update_random_observations(best_Random):
     """Simulates a random policy by taking a the current list of best values observed randomly,
     drawing a new random point, observing its value, and updating the list.
     """
-    rand_x = 1.2 * np.random.dirichlet(np.ones((nqueues, )), 1)
-    rand_x = torch.from_numpy(rand_x)
-    rand_x = rand_x.view([1, 1, nqueues])
-    simulator_output = simulator.evaluate(rand_x)
-    rand_fx = output_for_ei(simulator_output)
-    next_random_best = rand_fx.max().item()
-    best_random.append(max(best_random[-1], next_random_best))       
-    return best_random
+    x = np.random.dirichlet(np.ones((nqueues, )), 1)
+    x = torch.from_numpy(x)
+    x = x.view([1, 1, nqueues])
+    simulator_output = simulator.evaluate(x)
+    fx = output_for_EI(simulator_output)
+    next_Random_best = fx.max().item()
+    best_Random.append(max(best_Random[-1], next_Random_best))       
+    return best_Random
 
 # Acquisition function optimization
 from botorch.optim import optimize_acqf
 
-def optimize_acqf_and_get_observation(acq_func):
+bounds = torch.tensor([[0.] * nqueues, [1.] * nqueues])
+
+def optimize_acqf(acq_func):
     """Optimizes the acquisition function, and returns a new candidate."""
     # optimize
     candidates, _ = optimize_acqf(
         acq_function=acq_func,
         bounds=bounds,
         q=BATCH_SIZE,
-        num_restarts=5*nqueues,
-        raw_samples=100*nqueues,  # used for intialization heuristic
-        equality_constraints=[(torch.tensor([i for i in range(nqueues)]), torch.tensor([1. for i in range(nqueues)]), 1.2)],
+        num_restarts=10*nqueues,
+        raw_samples=100*nqueues,
+        equality_constraints=[(torch.tensor([i for i in range(nqueues)]), torch.tensor([1. for i in range(nqueues)]), 1.)],
     )
-    # observe new values 
+    # suggested point(s)
     new_x = candidates.detach()
     new_x =  new_x.view([1, BATCH_SIZE, nqueues])
     return new_x
 
 # Problem setup
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dtype = torch.double
-bounds = torch.tensor([[0.0] * nqueues, [1.2] * nqueues], device=device, dtype=dtype)
 N_TRIALS = 10
-N_BATCH = 40
+N_BATCH = 50
 
 def generate_initial_X(n, seed=None):
     # generate training data
     if seed is not None:
         random_state = np.random.RandomState(seed)
-        train_X = random_state.dirichlet(np.ones((nqueues, )), n)
+        X = random_state.dirichlet(np.ones((nqueues, )), n)
     else:
-        train_X = np.random.dirichlet(np.ones((nqueues, )), n)
-    train_X *= 1.2
-    train_X = torch.from_numpy(train_X)
-    train_X = train_X.view((1, n, nqueues))
-    return train_X
+        X = np.random.dirichlet(np.ones((nqueues, )), n)
+    X = torch.from_numpy(X)
+    X = X.view((1, n, nqueues))
+    return X
 
 # Run BO loop N_TRIALS times
-verbose = True
+historical_best = []
 
-best_observed_all_random, best_observed_all_ei, best_observed_all_eiqn = [], [], []
+if len(sys.argv) > 1:
+    experiment_number = int(sys.argv[1])
+    results_filename = [experiment_name, sampling_policy_name, str(experiment_number)]
 
 for trial in range(1, N_TRIALS + 1):
     print(f"\nTrial {trial:>2} of {N_TRIALS} ", end="")
-    best_observed_ei, best_observed_eiqn, best_observed_random = [], [], []
+    best_observed_EI, best_observed_EIQN, best_observed_Random = [], [], []
     
     # call helper functions to generate initial training data and initialize model
-    train_x = generate_initial_X(n=2 * nqueues, seed=trial)
-    simulator_output_at_train_x = simulator.evaluate(train_x)
+    X = generate_initial_X(n=2 * nqueues, seed=trial)
+    simulator_output_at_X = simulator.evaluate(X)
     
-    train_x_eiqn = train_x.clone()
-    train_x_ei = train_x
+    X_EIQN = X.clone()
+    X_EI = X
     
-    train_fx_eiqn = output_for_eiqn(simulator_output_at_train_x)
-    train_fx_ei = output_for_ei(simulator_output_at_train_x)
+    fX_EIQN = output_for_EIQN(simulator_output_at_X)
+    fX_EI = output_for_EI(simulator_output_at_X)
     
-    best_value_eiqn = g_mapping(train_fx_ei).max().item()
-    best_value_ei = train_fx_ei.max().item()
+    best_value_EIQN = g_mapping(fX_EI).max().item()
+    best_value_EI = fX_EI.max().item()
     
-    model_eiqn = NetworkGP(dag, train_x_eiqn, train_fx_eiqn, train_Yvar=None, indices_X=indices_X)
-    mll_ei, model_ei = initialize_model(train_x_ei, train_fx_ei)
+    model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, Yvar=None, indices_X=indices_X)
+    mll_EI, model_EI = initialize_model(X_EI, fX_EI)
     
     
     
-    best_observed_eiqn.append(best_value_eiqn)
-    best_observed_ei.append(best_value_ei)
-    best_observed_random.append(np.copy(best_value_ei))
+    best_observed_EIQN.append(best_value_EIQN)
+    best_observed_EI.append(best_value_EI)
+    best_observed_Random.append(np.copy(best_value_EI))
     
     # run N_BATCH rounds of BayesOpt after the initial random batch
     for iteration in range(1, N_BATCH + 1):    
         
         qmc_sampler = SobolQMCNormalSampler(num_samples=MC_SAMPLES)
         EIQN = qExpectedImprovement(
-            model=model_eiqn, 
-            best_f=best_value_eiqn,
+            model=model_EIQN, 
+            best_f=best_value_EIQN,
             sampler=qmc_sampler,
             objective=g,
 
         )
         
-        fit_gpytorch_model(mll_ei)
-        EI = ExpectedImprovement(model=model_ei, best_f=best_value_ei)
+        fit_gpytorch_model(mll_EI)
+        EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
         
         # optimize and get new observation
-        new_x_eiqn = optimize_acqf_and_get_observation(EIQN)
-        new_fx_eiqn = output_for_eiqn(simulator.evaluate(new_x_eiqn))
+        new_x_EIQN = optimize_acqf_and_get_observation(EIQN)
+        new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
         
-        new_x_ei = optimize_acqf_and_get_observation(EI)
-        new_fx_ei = output_for_ei(simulator.evaluate(new_x_ei))
+        new_x_EI = optimize_acqf_and_get_observation(EI)
+        new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
                 
         # update training data
-        train_x_eiqn = torch.cat([train_x_eiqn, new_x_eiqn], 1)
-        train_fx_eiqn = torch.cat([train_fx_eiqn, new_fx_eiqn], 1)
+        X_EIQN = torch.cat([X_EIQN, new_x_EIQN], 1)
+        fX_EIQN = torch.cat([fX_EIQN, new_fx_EIQN], 1)
         
-        train_x_ei = torch.cat([train_x_ei, new_x_ei], 1)
-        train_fx_ei = torch.cat([train_fx_ei, new_fx_ei], 1)
+        X_EI = torch.cat([X_EI, new_x_EI], 1)
+        fX_EI = torch.cat([fX_EI, new_fx_EI], 1)
 
         # update progress
-        best_value_eiqn = g_mapping(train_fx_eiqn).max().item()
-        best_value_ei = train_fx_ei.max().item()
+        best_value_EIQN = g_mapping(fX_EIQN).max().item()
+        best_value_EI = fX_EI.max().item()
         
-        best_observed_eiqn.append(best_value_eiqn)
-        best_observed_ei.append(best_value_ei)
-        best_observed_random = update_random_observations(best_observed_random)
+        best_observed_EIQN.append(best_value_EIQN)
+        best_observed_EI.append(best_value_EI)
+        best_observed_Random = update_Random_observations(best_observed_Random)
 
-        # reinitialize the models so they are ready for fitting on next iteration
+        # rEInitialize the models so they are ready for fitting on next iteration
         # use the current state dict to speed up fitting
-        model_eiqn = NetworkGP(dag, train_x_eiqn, train_fx_eiqn, indices_X=indices_X)
+        model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, indices_X=indices_X)
         
-        mll_ei, model_ei = initialize_model(
-            train_x_ei, 
-            train_fx_ei, 
-            model_ei.state_dict(),
+        mll_EI, model_EI = initialize_model(
+            X_EI, 
+            fX_EI, 
+            model_EI.state_dict(),
         )
               
         if verbose:
             print(
-                f"\nBatch {iteration:>2}: best_value (random, EI, EI-QN) = "
-                f"({max(best_observed_random):>4.2f}, {best_value_ei:>4.2f}, {best_value_eiqn:>4.2f}) ", end=""
+                f"\nBatch {iteration:>2}: best_value (Random, EI, EI-QN) = "
+                f"({max(best_observed_Random):>4.2f}, {best_value_EI:>4.2f}, {best_value_EIQN:>4.2f}) ", end=""
             )
         else:
             print(".", end="")
-   
-    best_observed_all_eiqn.append(best_observed_eiqn)
-    best_observed_all_ei.append(best_observed_ei)
-    best_observed_all_random.append(best_observed_random)
-
-# Plot results   
-from matplotlib import pyplot as plt
-
-def ci(y):
-    return 1.96 * y.std(axis=0) / np.sqrt(N_TRIALS)
-
-iters = np.arange(N_BATCH + 1) * BATCH_SIZE
-y_eiqn = np.asarray(best_observed_all_eiqn)
-y_ei = np.asarray(best_observed_all_ei)
-y_rnd = np.asarray(best_observed_all_random)
-
-fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-ax.errorbar(iters, y_rnd.mean(axis=0), yerr=ci(y_rnd), label="random", linewidth=1.5)
-ax.errorbar(iters, y_ei.mean(axis=0), yerr=ci(y_ei), label="EI", linewidth=1.5)
-ax.errorbar(iters, y_eiqn.mean(axis=0), yerr=ci(y_eiqn), label="EI-QN", linewidth=1.5)
-#ax.set_ylim(bottom=0.5)
-ax.set(xlabel='number of observations (beyond initial points)', ylabel='best objective value')
-ax.legend(loc="lower right")
-plt.show()
+    best_observed_all_EIQN.append(best_observed_EIQN)
+    best_observed_all_EI.append(best_observed_EI)
+    best_observed_all_Random.append(best_observed_Random)
+    if not os.path.exists(results_folder) :
+        os.makedirs(results_folder)
+    np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
+    np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
+    np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
