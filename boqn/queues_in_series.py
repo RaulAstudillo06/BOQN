@@ -117,9 +117,9 @@ class queues_in_series:
             self.completions = [[0.] * 0 for q in range(self.nqueues)]
             self.arrivals = [[0.] * 0 for q in range(self.nqueues)]
 
-    def simulate_several(self, nreps=100, maxT=10):
+    def simulate_several(self, nreps=500, maxT=10):
         # Run the simulation several times and compute sample mean and stderr for the output of each queue
-
+        self.random_state = np.random.RandomState(self.seed)
         # For each queue, we'll maintain a list of outputs
         outputs = np.empty((0, self.nqueues))
 
@@ -140,13 +140,14 @@ class queues_in_series:
         return avg, stderr
     
     def evaluate(self, service_rates_tensor):
-        input_shape = service_rates_tensor.shape
+        service_rates_tensor_copy = (1.2 * self.nqueues) * service_rates_tensor.clone()
+        input_shape = service_rates_tensor_copy.shape
         output = torch.empty(input_shape[:-1] + torch.Size([self.nqueues, 2]))
         for i in range(input_shape[0]):
             for j in range(input_shape[1]):
-                self.service_rate = list(service_rates_tensor[i, j, :])
+                self.service_rate = list(service_rates_tensor_copy[i, j, :])
                 if len(self.service_rate) == self.nqueues - 1:
-                    self.service_rate.append(1.2 - sum(self.service_rate))
+                    print(error)#self.service_rate.append(self.nqueues * 1.2 - sum(self.service_rate))
                 avg, stderr = self.simulate_several()
                 output[i, j, :, 0] = torch.tensor(avg)
                 output[i, j, :, 1] = torch.tensor(stderr)

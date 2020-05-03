@@ -66,5 +66,5 @@ __pycache__/
 *.pstats
 
 # Experimental results
-results/
-results_assesment/
+experiments/
+experiments_results/

@@ -85,7 +85,7 @@ from botorch.optim import optimize_acqf
 
 bounds = torch.tensor([[0.] * nqueues, [1.] * nqueues])
 
-def optimize_acqf(acq_func):
+def optimize_acqf_and_get_suggested_point(acq_func):
     """Optimizes the acquisition function, and returns a new candidate."""
     # optimize
     candidates, _ = optimize_acqf(
@@ -101,10 +101,7 @@ def optimize_acqf(acq_func):
     new_x =  new_x.view([1, BATCH_SIZE, nqueues])
     return new_x
 
-# Problem setup
-N_TRIALS = 10
-N_BATCH = 50
-
+# Function to generate initial data
 def generate_initial_X(n, seed=None):
     # generate training data
     if seed is not None:
@@ -116,15 +113,14 @@ def generate_initial_X(n, seed=None):
     X = X.view((1, n, nqueues))
     return X
 
-# Run BO loop N_TRIALS times
-historical_best = []
-
+# Run BO loop times
+N_BATCH = 2
+simulator = queues_in_series(nqueues=nqueues, arrival_rate=1., seed=simulator_seed)
+if not os.path.exists(results_folder) :
+            os.makedirs(results_folder)
 if len(sys.argv) > 1:
-    experiment_number = int(sys.argv[1])
-    results_filename = [experiment_name, sampling_policy_name, str(experiment_number)]
+    trial = int(sys.argv[1])
 
-for trial in range(1, N_TRIALS + 1):
-    print(f"\nTrial {trial:>2} of {N_TRIALS} ", end="")
     best_observed_EI, best_observed_EIQN, best_observed_Random = [], [], []
     
     # call helper functions to generate initial training data and initialize model
@@ -140,7 +136,7 @@ for trial in range(1, N_TRIALS + 1):
     best_value_EIQN = g_mapping(fX_EI).max().item()
     best_value_EI = fX_EI.max().item()
     
-    model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, Yvar=None, indices_X=indices_X)
+    model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, indices_X=indices_X)
     mll_EI, model_EI = initialize_model(X_EI, fX_EI)
     
     
@@ -165,10 +161,10 @@ for trial in range(1, N_TRIALS + 1):
         EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
         
         # optimize and get new observation
-        new_x_EIQN = optimize_acqf_and_get_observation(EIQN)
+        new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN)
         new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
         
-        new_x_EI = optimize_acqf_and_get_observation(EI)
+        new_x_EI = optimize_acqf_and_get_suggested_point(EI)
         new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
                 
         # update training data
@@ -184,7 +180,7 @@ for trial in range(1, N_TRIALS + 1):
         
         best_observed_EIQN.append(best_value_EIQN)
         best_observed_EI.append(best_value_EI)
-        best_observed_Random = update_Random_observations(best_observed_Random)
+        best_observed_Random = update_random_observations(best_observed_Random)
 
         # rEInitialize the models so they are ready for fitting on next iteration
         # use the current state dict to speed up fitting
@@ -195,19 +191,7 @@ for trial in range(1, N_TRIALS + 1):
             fX_EI, 
             model_EI.state_dict(),
         )
-              
-        if verbose:
-            print(
-                f"\nBatch {iteration:>2}: best_value (Random, EI, EI-QN) = "
-                f"({max(best_observed_Random):>4.2f}, {best_value_EI:>4.2f}, {best_value_EIQN:>4.2f}) ", end=""
-            )
-        else:
-            print(".", end="")
-    best_observed_all_EIQN.append(best_observed_EIQN)
-    best_observed_all_EI.append(best_observed_EI)
-    best_observed_all_Random.append(best_observed_Random)
-    if not os.path.exists(results_folder) :
-        os.makedirs(results_folder)
-    np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
-    np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
-    np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
+        
+        np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
+        np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
+        np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
