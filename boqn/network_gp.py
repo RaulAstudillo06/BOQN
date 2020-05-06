@@ -35,7 +35,8 @@ class NetworkGP(Model):
         
         self.node_GPs = [None for k in range(self.n_nodes)]
         self.node_mlls = [None for k in range(self.n_nodes)]
-        self.normalization_constant = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
+        self.normalization_constant_lower = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
+        self.normalization_constant_upper = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
         #print(self.normalization_constant)
 
         for k in self.root_nodes:
@@ -55,8 +56,9 @@ class NetworkGP(Model):
                 #train_X_node_k = torch.cat([train_X[..., :k + 1], train_Y[..., self.dag.get_parent_nodes(k)]], 2)
                 aux = train_Y[..., self.dag.get_parent_nodes(k)].clone()
                 for j in range(len(self.dag.get_parent_nodes(k))):
-                    self.normalization_constant[k][j] = torch.max(aux[..., j])
-                    aux[..., j] = aux[..., j]/self.normalization_constant[k][j]
+                    self.normalization_constant_lower[k][j] = torch.min(aux[..., j])
+                    self.normalization_constant_upper[k][j] = torch.max(aux[..., j])
+                    aux[..., j] = (aux[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
                 train_X_node_k = torch.cat([train_X[..., :k + 1], aux], 2)
                 train_Y_node_k = train_Y[..., [k]]
                 aux_model =  FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
@@ -67,7 +69,6 @@ class NetworkGP(Model):
                 self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, covar_module=covar_module_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
                 self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
                 fit_gpytorch_model(self.node_mlls[k])
-        print(self.normalization_constant)
         
         #posterior = self.node_GPs[-1].posterior(train_X_node_k)
         #print(train_X_node_k)
@@ -88,21 +89,22 @@ class NetworkGP(Model):
             distributions over `q` points. Includes observation noise if
             specified.
         """
-        return NetworkMultivariateNormal(self.node_GPs, self.dag, X, self.indices_X, self.normalization_constant)
+        return NetworkMultivariateNormal(self.node_GPs, self.dag, X, self.indices_X, self.normalization_constant_lower, self.normalization_constant_upper)
     
     def forward(self, x: Tensor) -> NetworkMultivariateNormal:
         return NetworkMultivariateNormal(self.node_GPs, self.dag, x, self.indices_X, self.normalization_constant)
         
         
 class NetworkMultivariateNormal(Posterior):
-    def __init__(self, node_GPs, dag, X, indices_X=None, normalization_constant=None):
+    def __init__(self, node_GPs, dag, X, indices_X=None, normalization_constant_lower=None, normalization_constant_upper=None):
         self.node_GPs = node_GPs
         self.dag = dag
         self.n_nodes = dag.get_n_nodes()
         self.root_nodes = dag.get_root_nodes()
         self.X = X
         self.indices_X = indices_X
-        self.normalization_constant = normalization_constant
+        self.normalization_constant_lower = normalization_constant_lower
+        self.normalization_constant_upper = normalization_constant_upper
         
     @property
     def device(self) -> torch.device:
@@ -150,7 +152,7 @@ class NetworkMultivariateNormal(Posterior):
                         #X_node_k = torch.cat([self.X[..., :k + 1], nodes_samples[i, :, :, parent_nodes]], 2)
                         aux = nodes_samples[i, :, :, parent_nodes].clone()
                         for j in range(len(parent_nodes)):
-                            aux[..., j] = aux[..., j]/self.normalization_constant[k][j]
+                            aux[..., j] = (aux[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
                         X_node_k = torch.cat([self.X[..., :k + 1], aux], 2)
                         multivariate_normal_at_node_k = self.node_GPs[k].posterior(X_node_k)
                         if base_samples is not None:
