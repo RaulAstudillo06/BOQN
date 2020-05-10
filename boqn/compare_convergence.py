@@ -20,14 +20,14 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'queues_in_series_2_'
+experiment = 'queues_in_series_3'
 #type_of_data = 'underlying_regret'
 type_of_data = 'underlying_optimal_values'
 n_replications = 10
 n_iterations = 40
 #algorithms = ['Random', 'ParEGO', 'uTS', 'uEI']
 #legend_names = ['Random', 'ParEGO', 'TS-UU', 'EI-UU']
-algorithms = ['random', 'ei', 'eiqn']
+algorithms = ['Random', 'EI', 'EIQN']
 legend_names = ['Random', 'EI', 'EI-QN']
 colors = ['violet',  'red', 'blue']
 dcolors = ['darkviolet', 'darkred', 'darkblue']
@@ -45,6 +45,7 @@ for i in range(len(algorithms)):
     except:
         pass
 
+plt.title(experiment)
 plt.xlabel('function evaluations')
 plt.ylabel('value')
 #plt.ylabel('$\log_{10}$(regret)')

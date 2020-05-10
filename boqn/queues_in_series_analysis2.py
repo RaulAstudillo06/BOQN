@@ -128,9 +128,9 @@ discretization_size = 4
 X1 = torch.linspace(0., nservers, discretization_size)
 X = torch.cat([X1.unsqueeze(-1), nservers - X1.unsqueeze(-1)], 1).view(torch.Size([1, discretization_size, 2]))
 train_x = X
-train_x = torch.tensor([0.2, 0.7,  1.0])
-train_x = generate_initial_X(n=7, seed=2)
-#train_x = torch.cat([train_x.unsqueeze(-1), nservers - train_x.unsqueeze(-1)], 1).view(torch.Size([1, 7, 2]))
+#train_x = torch.tensor([0.2, 0.7,  1.0])
+#train_x = torch.cat([train_x.unsqueeze(-1), nservers - train_x.unsqueeze(-1)], 1).view(torch.Size([1, 3, 2]))
+#train_x = generate_initial_X(n=7, seed=2)
 simulator_output_at_train_x = simulator.evaluate(train_x)
 
 train_x_eiqn = train_x.clone()

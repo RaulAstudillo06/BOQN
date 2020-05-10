@@ -16,13 +16,14 @@ from node_kernel import NodeMaternKernel
 from botorch import fit_gpytorch_model
 from botorch.posteriors import Posterior
 from botorch.models.transforms import Standardize
+from copy import deepcopy
 
 
 class NetworkGP(Model):
     r"""
     """
     
-    def __init__(self, dag, train_X, train_Y, train_Yvar=None, indices_X=None) -> None:
+    def __init__(self, dag, train_X, train_Y, train_Yvar=None, active_input_indices=None, main_input_indices=None) -> None:
         r"""
         """
         self.dag = dag
@@ -31,8 +32,16 @@ class NetworkGP(Model):
         self.train_X = train_X
         self.train_Y = train_Y
         self.train_Yvar = train_Yvar
-        self.indices_X = indices_X
-        
+        self.active_input_indices = active_input_indices
+        self.main_input_indices = main_input_indices
+        self.main_input_indices_rescaled = [[] for k in range(self.n_nodes)]
+
+        for k in range(self.n_nodes):
+            for i in range(len(self.main_input_indices[k])):
+                for j in range(len(self.active_input_indices[k])):
+                    if self.main_input_indices[k][i] == self.active_input_indices[k][j]:
+                        self.main_input_indices_rescaled[k].append(deepcopy(j))
+
         self.node_GPs = [None for k in range(self.n_nodes)]
         self.node_mlls = [None for k in range(self.n_nodes)]
         self.normalization_constant_lower = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
@@ -40,8 +49,8 @@ class NetworkGP(Model):
         #print(self.normalization_constant)
 
         for k in self.root_nodes:
-            if self.indices_X is not None:
-                train_X_node_k = train_X[..., self.indices_X[k]]
+            if self.active_input_indices is not None:
+                train_X_node_k = train_X[..., self.active_input_indices[k]]
             else:
                 train_X_node_k = train_X
             train_Y_node_k = train_Y[..., [k]]
@@ -59,14 +68,17 @@ class NetworkGP(Model):
                     self.normalization_constant_lower[k][j] = torch.min(aux[..., j])
                     self.normalization_constant_upper[k][j] = torch.max(aux[..., j])
                     aux[..., j] = (aux[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
-                train_X_node_k = torch.cat([train_X[..., :k + 1], aux], 2)
+                train_X_node_k = torch.cat([train_X[..., self.active_input_indices[k]], aux], 2)
                 train_Y_node_k = train_Y[..., [k]]
-                aux_model =  FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+                aux_model =  FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))  
                 batch_shape = aux_model._aug_batch_shape
-                covar_module_node_k = ScaleKernel(NodeMaternKernel(self.indices_X[k], len(self.dag.get_parent_nodes(k)), train_X_node_k, train_Y_node_k, nu=2.5, ard_num_dims=train_X_node_k.shape[-1], batch_shape=batch_shape, lengthscale_prior=GammaPrior(3.0, 6.0)), batch_shape=batch_shape, outputscale_prior=GammaPrior(2.0, 0.15))
                 #self.node_GPs[k] = SingleTaskGP(train_X=train_X_node_k, train_Y=train_Y_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
                 #self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
-                self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, covar_module=covar_module_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+                if len(self.main_input_indices[k]) < len(self.active_input_indices[k]):
+                    covar_module_node_k = ScaleKernel(NodeMaternKernel(self.main_input_indices_rescaled[k], len(self.dag.get_parent_nodes(k)), train_X_node_k, train_Y_node_k, nu=2.5, ard_num_dims=train_X_node_k.shape[-1], batch_shape=batch_shape, lengthscale_prior=GammaPrior(3.0, 6.0)), batch_shape=batch_shape, outputscale_prior=GammaPrior(2.0, 0.15))
+                    self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, covar_module=covar_module_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+                else:
+                    self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
                 self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
                 fit_gpytorch_model(self.node_mlls[k])
         
@@ -89,10 +101,10 @@ class NetworkGP(Model):
             distributions over `q` points. Includes observation noise if
             specified.
         """
-        return NetworkMultivariateNormal(self.node_GPs, self.dag, X, self.indices_X, self.normalization_constant_lower, self.normalization_constant_upper)
+        return NetworkMultivariateNormal(self.node_GPs, self.dag, X, self.active_input_indices, self.normalization_constant_lower, self.normalization_constant_upper)
     
     def forward(self, x: Tensor) -> NetworkMultivariateNormal:
-        return NetworkMultivariateNormal(self.node_GPs, self.dag, x, self.indices_X, self.normalization_constant)
+        return NetworkMultivariateNormal(self.node_GPs, self.dag, x, self.active_input_indices, self.normalization_constant)
         
         
 class NetworkMultivariateNormal(Posterior):
@@ -102,7 +114,7 @@ class NetworkMultivariateNormal(Posterior):
         self.n_nodes = dag.get_n_nodes()
         self.root_nodes = dag.get_root_nodes()
         self.X = X
-        self.indices_X = indices_X
+        self.active_input_indices = indices_X
         self.normalization_constant_lower = normalization_constant_lower
         self.normalization_constant_upper = normalization_constant_upper
         
@@ -125,15 +137,12 @@ class NetworkMultivariateNormal(Posterior):
         return shape
     
     def rsample(self, sample_shape=torch.Size(), base_samples=None):
-        if len(sample_shape) > 1:
-            print(error)
-            
         nodes_samples = torch.zeros(sample_shape + self.event_shape)
         nodes_samples = nodes_samples.double()
         nodes_samples_available = [False for k in range(self.n_nodes)]
         for k in self.root_nodes:
-            if self.indices_X is not None:
-                X_node_k = self.X[..., self.indices_X[k]]
+            if self.active_input_indices is not None:
+                X_node_k = self.X[..., self.active_input_indices[k]]
             else:
                 X_node_k = self.X
             multivariate_normal_at_node_k = self.node_GPs[k].posterior(X_node_k)
@@ -141,25 +150,25 @@ class NetworkMultivariateNormal(Posterior):
                 nodes_samples[..., k] = multivariate_normal_at_node_k.rsample(sample_shape, base_samples=base_samples[..., [k]])[..., 0]
             else:
                 nodes_samples[..., k] = multivariate_normal_at_node_k.rsample(sample_shape)[..., 0]
+                #print(error)
             nodes_samples_available[k] = True
   
         while not all(nodes_samples_available):
             for k in range(self.n_nodes): 
                 parent_nodes = self.dag.get_parent_nodes(k)
-                #print(self.normalization_constant[k])
                 if not nodes_samples_available[k] and all([nodes_samples_available[j] for j in parent_nodes]):
                     for i in range(sample_shape[0]):
-                        #X_node_k = torch.cat([self.X[..., :k + 1], nodes_samples[i, :, :, parent_nodes]], 2)
                         aux = nodes_samples[i, :, :, parent_nodes].clone()
                         for j in range(len(parent_nodes)):
                             aux[..., j] = (aux[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
-                        X_node_k = torch.cat([self.X[..., :k + 1], aux], 2)
+                        X_node_k = torch.cat([self.X[..., self.active_input_indices[k]], aux], 2)
                         multivariate_normal_at_node_k = self.node_GPs[k].posterior(X_node_k)
                         if base_samples is not None:
-                            nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample(base_samples=base_samples[[i], :, :, [k]])[0, :, :, 0]
+                            nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample(base_samples=base_samples[i, :, :, k])[0, :, :, 0]
                         else:
                             nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample()[0, :, :, 0]
+                            #print(error)
                     nodes_samples_available[k] = True
-            
+                    
         return nodes_samples
         

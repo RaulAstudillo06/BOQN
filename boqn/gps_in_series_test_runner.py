@@ -13,24 +13,24 @@ project_path = script_dir[:-5]
 results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
-from queues_in_series import queues_in_series
+from gps_in_series import GPs_in_series
 from dag import DAG
 simulator_seed = 1
-nqueues = 4
-test_problem = 'queues_in_series_' + str(nqueues)
+n_nodes = 3
+test_problem = 'gps_in_series_' + str(n_nodes)
     # Define network structure
 dag_as_list = []
 dag_as_list.append([])
-for k in range(nqueues - 1):
+for k in range(n_nodes - 1):
     dag_as_list.append([k])
 dag= DAG(dag_as_list)
 
 active_input_indices = []
-for k in range(nqueues):
-    active_input_indices.append([j for j in range(k + 1)])  
+for k in range(n_nodes):
+    active_input_indices.append([k])  
 
 main_input_indices = []
-for k in range(nqueues):
+for k in range(n_nodes):
     main_input_indices.append([k]) 
 
 # EI-QN especifics
@@ -43,7 +43,7 @@ g_mapping = lambda Y: Y[..., -1]
 g = GenericMCObjective(g_mapping)
 
 def output_for_EIQN(simulator_output):
-    return simulator_output[..., 0]
+    return simulator_output
 
 MC_SAMPLES = 512
 BATCH_SIZE = 1
@@ -56,7 +56,7 @@ from botorch import fit_gpytorch_model
 from botorch.models.transforms import Standardize
 
 def output_for_EI(simulator_output):
-    return simulator_output[...,[-1], 0]
+    return simulator_output[...,[-1]]
 
 
 def initialize_model(X, Y, Yvar=None, state_dict=None):
@@ -74,9 +74,7 @@ def update_random_observations(best_Random):
     """Simulates a random policy by taking a the current list of best values observed randomly,
     drawing a new random point, observing its value, and updating the list.
     """
-    x = np.random.dirichlet(np.ones((nqueues, )), 1)
-    x = torch.from_numpy(x)
-    x = x.view([1, 1, nqueues])
+    x = torch.rand([1, 1, n_nodes])
     simulator_output = simulator.evaluate(x)
     fx = output_for_EI(simulator_output)
     next_Random_best = fx.max().item()
@@ -86,7 +84,7 @@ def update_random_observations(best_Random):
 # Acquisition function optimization
 from botorch.optim import optimize_acqf
 
-bounds = torch.tensor([[0.] * nqueues, [1.] * nqueues])
+bounds = torch.tensor([[0. for i in range(n_nodes)], [1. for i in range(n_nodes)]])
 
 def optimize_acqf_and_get_suggested_point(acq_func):
     """Optimizes the acquisition function, and returns a new candidate."""
@@ -95,30 +93,29 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         acq_function=acq_func,
         bounds=bounds,
         q=BATCH_SIZE,
-        num_restarts=10*nqueues,
-        raw_samples=100*nqueues,
-        equality_constraints=[(torch.tensor([i for i in range(nqueues)]), torch.tensor([1. for i in range(nqueues)]), 1.)],
+        num_restarts=10*n_nodes,
+        raw_samples=100*n_nodes,
     )
     # suggested point(s)
     new_x = candidates.detach()
-    new_x =  new_x.view([1, BATCH_SIZE, nqueues])
+    new_x =  new_x.view([1, BATCH_SIZE, n_nodes])
     return new_x
 
 # Function to generate initial data
 def generate_initial_X(n, seed=None):
     # generate training data
     if seed is not None:
-        random_state = np.random.RandomState(seed)
-        X = random_state.dirichlet(np.ones((nqueues, )), n)
+        old_state = torch.random.get_rng_state()
+        torch.manual_seed(seed)
+        X = torch.rand([1, n, n_nodes])
+        torch.random.set_rng_state(old_state)
     else:
-        X = np.random.dirichlet(np.ones((nqueues, )), n)
-    X = torch.from_numpy(X)
-    X = X.view((1, n, nqueues))
+        X = torch.rand([1, n, n_nodes])
     return X
 
 # Run BO loop times
 N_BATCH = 2
-simulator = queues_in_series(nqueues=nqueues, arrival_rate=1., seed=simulator_seed)
+simulator = GPs_in_series(n_nodes=n_nodes, seed=simulator_seed)
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 if len(sys.argv) > 1:
@@ -127,8 +124,10 @@ if len(sys.argv) > 1:
     best_observed_EI, best_observed_EIQN, best_observed_Random = [], [], []
     
     # call helper functions to generate initial training data and initialize model
-    X = generate_initial_X(n=2 * nqueues, seed=trial)
+    X = generate_initial_X(n=2*(n_nodes+1), seed=trial)
     simulator_output_at_X = simulator.evaluate(X)
+    print(X)
+    print(simulator_output_at_X)
     
     X_EIQN = X.clone()
     X_EI = X
