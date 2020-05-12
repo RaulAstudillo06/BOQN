@@ -98,6 +98,7 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         num_restarts=10*nqueues,
         raw_samples=100*nqueues,
         equality_constraints=[(torch.tensor([i for i in range(nqueues)]), torch.tensor([1. for i in range(nqueues)]), 1.)],
+        #options={'disp': True},
     )
     # suggested point(s)
     new_x = candidates.detach()

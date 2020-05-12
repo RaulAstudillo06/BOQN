@@ -14,11 +14,10 @@ project_path = script_dir[:-5]
 results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
-from gps_in_series import GPs_in_series
+from alpine2 import Alpine2
 from dag import DAG
-simulator_seed = 1
 n_nodes = 4
-test_problem = 'gps_in_series_' + str(n_nodes)
+test_problem = 'alpine2_' + str(n_nodes)
     # Define network structure
 dag_as_list = []
 dag_as_list.append([])
@@ -96,7 +95,7 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         q=BATCH_SIZE,
         num_restarts=10*n_nodes,
         raw_samples=100*n_nodes,
-        #options={'iprint': 101},
+        #options={'iprint': 101}
     )
     # suggested point(s)
     new_x = candidates.detach()
@@ -116,14 +115,16 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 5
-simulator = GPs_in_series(n_nodes=n_nodes, seed=simulator_seed)
+N_BATCH = 75
+simulator = Alpine2(n_nodes=n_nodes)
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
+
+run_Random =  False
+run_EI = False
+run_EIQN = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])
-
-    best_observed_EI, best_observed_EIQN, best_observed_Random = [], [], []
     
     # call helper functions to generate initial training data and initialize model
     X = generate_initial_X(n=2*(n_nodes+1), seed=trial)
@@ -131,81 +132,75 @@ if len(sys.argv) > 1:
     print(X)
     print(simulator_output_at_X)
     
-    X_EIQN = X.clone()
-    X_EI = X
-    
-    fX_EIQN = output_for_EIQN(simulator_output_at_X)
-    fX_EI = output_for_EI(simulator_output_at_X)
-    
-    best_value_EIQN = g_mapping(fX_EI).max().item()
-    best_value_EI = fX_EI.max().item()
-    
-    mll_EI, model_EI = initialize_model(X_EI, fX_EI)
-    
-    
-    
-    best_observed_EIQN.append(best_value_EIQN)
-    best_observed_EI.append(best_value_EI)
-    best_observed_Random.append(np.copy(best_value_EI))
+    if run_EIQN:
+        best_observed_EIQN = []
+        X_EIQN = X.clone()
+        fX_EIQN = output_for_EIQN(simulator_output_at_X)
+        best_value_EIQN = g_mapping(fX_EIQN).max().item()
+        best_observed_EIQN.append(best_value_EIQN)
+    if run_EI:
+        best_observed_EI = []
+        X_EI = X.clone()
+        fX_EI = output_for_EI(simulator_output_at_X)
+        mll_EI, model_EI = initialize_model(X_EI, fX_EI)
+        best_value_EI = fX_EI.max().item()
+        best_observed_EI.append(best_value_EI)
+    if run_Random:
+        best_observed_Random = []
+        best_observed_Random.append(output_for_EI(simulator_output_at_X).max().item())
     
     # run N_BATCH rounds of BayesOpt after the initial random batch
-    for iteration in range(1, N_BATCH + 1):    
-                
-        # optimize and get new observation
-        t0 = time.time()
-        model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, active_input_indices=active_input_indices, main_input_indices=main_input_indices)
-        t1 = time.time()
-        print('Training the model took: ' + str(t1 - t0))
-        qmc_sampler = SobolQMCNormalSampler(num_samples=MC_SAMPLES)
-        EIQN = qExpectedImprovement(
-            model=model_EIQN, 
-            best_f=best_value_EIQN,
-            sampler=qmc_sampler,
-            objective=g,
-
-        )
-        t0 = time.time()
-        new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN)
-        t1 = time.time()
-        print('Optimizing the acquisition function took: ' + str(t1 - t0))
-        new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
-        
-        fit_gpytorch_model(mll_EI)
-        EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
-        
-        new_x_EI = optimize_acqf_and_get_suggested_point(EI)
-        new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
-                
-        # update training data
-        X_EIQN = torch.cat([X_EIQN, new_x_EIQN], 1)
-        fX_EIQN = torch.cat([fX_EIQN, new_fx_EIQN], 1)
-        
-        X_EI = torch.cat([X_EI, new_x_EI], 1)
-        fX_EI = torch.cat([fX_EI, new_fx_EI], 1)
-
-        # update progress
-        best_value_EIQN = g_mapping(fX_EIQN).max().item()
-        best_value_EI = fX_EI.max().item()
-        
-        best_observed_EIQN.append(best_value_EIQN)
-        best_observed_EI.append(best_value_EI)
-        best_observed_Random = update_random_observations(best_observed_Random)
-
-        # rEInitialize the models so they are ready for fitting on next iteration
-        # use the current state dict to speed up fitting
-        model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, active_input_indices=active_input_indices, main_input_indices=main_input_indices)
-        
-        mll_EI, model_EI = initialize_model(
-            X_EI, 
-            fX_EI, 
-            model_EI.state_dict(),
-        )
-        
-        np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
-        np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
-        np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
-        
-        print(
-            f"\nBatch {iteration:>2}: best_value (Random, EI, EI-QN) = "
-            f"({max(best_observed_Random):>4.4f}, {best_value_EI:>4.4f}, {best_value_EIQN:>4.4f}), ", end=""
-        )
+    for iteration in range(1, N_BATCH + 1):
+        print('Experiment: ' + test_problem)
+        print('Replication id: ' + str(trial))
+        print('Iteration: ' + str(iteration))
+        if run_EIQN:
+            t0 = time.time()
+            model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, active_input_indices=active_input_indices, main_input_indices=main_input_indices)
+            t1 = time.time()
+            print('Training the model took: ' + str(t1 - t0))
+            qmc_sampler = SobolQMCNormalSampler(num_samples=MC_SAMPLES)
+            EIQN = qExpectedImprovement(
+                model=model_EIQN, 
+                best_f=best_value_EIQN,
+                sampler=qmc_sampler,
+                objective=g,
+    
+            )
+            t0 = time.time()
+            new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN)
+            t1 = time.time()
+            print('Optimizing the acquisition function took: ' + str(t1 - t0))
+            new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
+            
+            X_EIQN = torch.cat([X_EIQN, new_x_EIQN], 1)
+            fX_EIQN = torch.cat([fX_EIQN, new_fx_EIQN], 1)
+            
+            best_value_EIQN = g_mapping(fX_EIQN).max().item()
+            best_observed_EIQN.append(best_value_EIQN)
+            print('Best value so far found the EIQN policy: ' + str(best_value_EIQN) )
+            np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
+            
+        if run_EI:
+            fit_gpytorch_model(mll_EI)
+            EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
+            
+            new_x_EI = optimize_acqf_and_get_suggested_point(EI)
+            new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
+            
+            X_EI = torch.cat([X_EI, new_x_EI], 1)
+            fX_EI = torch.cat([fX_EI, new_fx_EI], 1)
+            
+            mll_EI, model_EI = initialize_model(X_EI, fX_EI, model_EI.state_dict())   
+            
+            best_value_EI = fX_EI.max().item()
+            best_observed_EI.append(best_value_EI)
+            
+            print('Best value so far found the EI policy: ' + str(best_value_EI) )
+            np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
+            
+        if run_Random:
+            best_observed_Random = update_random_observations(best_observed_Random)
+            print('Best value so far found the Random policy: ' + str(best_observed_Random[-1]))
+            np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
+        print('')

@@ -17,6 +17,7 @@ from botorch import fit_gpytorch_model
 from botorch.posteriors import Posterior
 from botorch.models.transforms import Standardize
 from copy import deepcopy
+import time
 
 
 class NetworkGP(Model):
@@ -137,6 +138,8 @@ class NetworkMultivariateNormal(Posterior):
         return shape
     
     def rsample(self, sample_shape=torch.Size(), base_samples=None):
+        t0 =  time.time()
+        print(self.X.shape)
         nodes_samples = torch.zeros(sample_shape + self.event_shape)
         nodes_samples = nodes_samples.double()
         nodes_samples_available = [False for k in range(self.n_nodes)]
@@ -167,8 +170,9 @@ class NetworkMultivariateNormal(Posterior):
                             nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample(base_samples=base_samples[i, :, :, k])[0, :, :, 0]
                         else:
                             nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample()[0, :, :, 0]
-                            #print(error)
+                            print(error)
                     nodes_samples_available[k] = True
-                    
+        t1 = time.time()
+        print('Taking this sample took: ' + str(t1 - t0))
         return nodes_samples
         
