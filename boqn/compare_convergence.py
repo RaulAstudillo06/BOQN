@@ -20,18 +20,18 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'queues_in_series_3'
+experiment = 'gps_in_series_4'
 #type_of_data = 'underlying_regret'
 type_of_data = 'underlying_optimal_values'
 n_replications = 10
-n_iterations = 40
+n_iterations = 25
 #algorithms = ['Random', 'ParEGO', 'uTS', 'uEI']
 #legend_names = ['Random', 'ParEGO', 'TS-UU', 'EI-UU']
-algorithms = ['Random', 'EI', 'EIQN']
-legend_names = ['Random', 'EI', 'EI-QN']
-colors = ['violet',  'red', 'blue']
-dcolors = ['darkviolet', 'darkred', 'darkblue']
-markers = ['^', 's', 'o']
+algorithms = ['Random', 'EI', 'EIQN', 'naive_EIQN']
+legend_names = ['Random', 'EI', 'EI-QN', 'naive EI-QN']
+colors = ['violet',  'red', 'blue', 'cyan']
+dcolors = ['darkviolet', 'darkred', 'darkblue', 'darkcyan']
+markers = ['^', 's', 'o', 'X']
 #plt.figure()
 plt.figure(figsize=(9, 6))
 #plt.figure(figsize=(8, 5))

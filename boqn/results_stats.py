@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'queues_in_series_6'
-sampling_policy = 'Random'
+experiment = 'alpine2_4'
+sampling_policy = 'EIQN'
 type_of_data = 'value'
 #type_of_data = 'underlying_regret'
 n_files = 10

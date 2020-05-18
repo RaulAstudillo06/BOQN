@@ -16,7 +16,7 @@ results_folder = project_path + '/experiments_results/'
 # Simulator setup
 from alpine2 import Alpine2
 from dag import DAG
-n_nodes = 4
+n_nodes = 6
 test_problem = 'alpine2_' + str(n_nodes)
     # Define network structure
 dag_as_list = []
@@ -95,7 +95,7 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         q=BATCH_SIZE,
         num_restarts=10*n_nodes,
         raw_samples=100*n_nodes,
-        #options={'iprint': 101}
+        options={'disp': True, 'iprint': 101}
     )
     # suggested point(s)
     new_x = candidates.detach()
@@ -115,13 +115,26 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 75
+N_BATCH = 150
 simulator = Alpine2(n_nodes=n_nodes)
+def my_objective(X):
+    print(g_mapping(simulator.evaluate(X))[..., 0].shape)
+    return g_mapping(simulator.evaluate(X))[..., 0]
+
+if False:
+    x_opt, val_opt = optimize_acqf(
+        acq_function=my_objective,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*n_nodes,
+        raw_samples=100*n_nodes,
+        #options={'iprint': 101},
+    )
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
-run_Random =  False
-run_EI = False
+run_Random =  True
+run_EI = True
 run_EIQN = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])

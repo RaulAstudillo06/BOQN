@@ -102,7 +102,7 @@ def optimize_acqf_and_get_suggested_point(acq_func):
     new_x = candidates.detach()
     new_x =  new_x.view([1, BATCH_SIZE, n_nodes])
     return new_x
-
+    
 # Function to generate initial data
 def generate_initial_X(n, seed=None):
     # generate training data
@@ -118,6 +118,24 @@ def generate_initial_X(n, seed=None):
 # Run BO loop times
 N_BATCH = 5
 simulator = GPs_in_series(n_nodes=n_nodes, seed=simulator_seed)
+
+from objective_function import ObjectiveFunction
+
+def obj_func_caller(X):
+    print(g_mapping(simulator.evaluate(X))[..., 0].shape)
+    return g_mapping(simulator.evaluate(X))[..., 0]
+
+obj_func = ObjectiveFunction(obj_func_caller)
+
+if False:
+    x_opt, val_opt = optimize_acqf(
+        acq_function=obj_func,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*n_nodes,
+        raw_samples=100*n_nodes,
+    )
+
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 if len(sys.argv) > 1:

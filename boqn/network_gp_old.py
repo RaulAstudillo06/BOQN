@@ -47,6 +47,7 @@ class NetworkGP(Model):
         self.node_mlls = [None for k in range(self.n_nodes)]
         self.normalization_constant_lower = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
         self.normalization_constant_upper = [[None for j in range(len(self.dag.get_parent_nodes(k)))] for k in range(self.n_nodes)]
+        #print(self.normalization_constant)
 
         for k in self.root_nodes:
             if self.active_input_indices is not None:
@@ -54,6 +55,7 @@ class NetworkGP(Model):
             else:
                 train_X_node_k = train_X
             train_Y_node_k = train_Y[..., [k]]
+            #print(train_Y_node_k)
             #self.node_GPs[k] = SingleTaskGP(train_X=train_X_node_k, train_Y=train_Y_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
             self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
             self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
@@ -61,6 +63,7 @@ class NetworkGP(Model):
             
         for k in range(self.n_nodes):
             if self.node_GPs[k] is None:
+                #train_X_node_k = torch.cat([train_X[..., :k + 1], train_Y[..., self.dag.get_parent_nodes(k)]], 2)
                 aux = train_Y[..., self.dag.get_parent_nodes(k)].clone()
                 for j in range(len(self.dag.get_parent_nodes(k))):
                     self.normalization_constant_lower[k][j] = torch.min(aux[..., j])
@@ -79,6 +82,11 @@ class NetworkGP(Model):
                     self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
                 self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
                 fit_gpytorch_model(self.node_mlls[k])
+        
+        #posterior = self.node_GPs[-1].posterior(train_X_node_k)
+        #print(train_X_node_k)
+        #print(posterior.variance)
+        #print(train_Y_node_k)
                 
     def posterior(self, X: Tensor) -> NetworkMultivariateNormal:
         r"""Computes the posterior over model outputs at the provided points.
@@ -131,11 +139,11 @@ class NetworkMultivariateNormal(Posterior):
     
     def rsample(self, sample_shape=torch.Size(), base_samples=None):
         #t0 =  time.time()
-        nodes_samples = torch.empty(sample_shape + self.event_shape)
+        nodes_samples = torch.zeros(sample_shape + self.event_shape)
         nodes_samples = nodes_samples.double()
         nodes_samples_available = [False for k in range(self.n_nodes)]
         for k in self.root_nodes:
-            t0 =  time.time()
+            t0 = time.time()
             if self.active_input_indices is not None:
                 X_node_k = self.X[..., self.active_input_indices[k]]
             else:
@@ -145,29 +153,30 @@ class NetworkMultivariateNormal(Posterior):
                 nodes_samples[..., k] = multivariate_normal_at_node_k.rsample(sample_shape, base_samples=base_samples[..., [k]])[..., 0]
             else:
                 nodes_samples[..., k] = multivariate_normal_at_node_k.rsample(sample_shape)[..., 0]
+                #print(error)
             nodes_samples_available[k] = True
             t1 = time.time()
             print('Part A of the code took: ' + str(t1 - t0))
   
         while not all(nodes_samples_available):
-            for k in range(self.n_nodes): 
+            for k in range(self.n_nodes):
                 parent_nodes = self.dag.get_parent_nodes(k)
                 if not nodes_samples_available[k] and all([nodes_samples_available[j] for j in parent_nodes]):
-                    t0 =  time.time()
+                    t0 = time.time()
                     parent_nodes_samples_normalized = nodes_samples[..., parent_nodes].clone()
                     for j in range(len(parent_nodes)):
                             parent_nodes_samples_normalized[..., j] = (parent_nodes_samples_normalized[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
-                    X_node_k = self.X[..., self.active_input_indices[k]]
-                    X_node_k = X_node_k.unsqueeze(0).repeat(sample_shape[0], 1, 1, 1)
-                    X_node_k = torch.cat([X_node_k, parent_nodes_samples_normalized], 3)
-                    multivariate_normal_at_node_k = self.node_GPs[k].posterior(X_node_k)
-                    if base_samples is not None:
-                        nodes_samples[..., k] = (multivariate_normal_at_node_k.mean + torch.einsum('abcd,a->abcd', torch.sqrt(multivariate_normal_at_node_k.variance), torch.flatten(base_samples[..., k])))[..., 0]
-                    else:
-                        nodes_samples[..., k] = multivariate_normal_at_node_k.rsample()[0, ..., 0]
+                    for i in range(sample_shape[0]):
+                        X_node_k = torch.cat([self.X[..., self.active_input_indices[k]], parent_nodes_samples_normalized[i, ...]], 2)
+                        multivariate_normal_at_node_k = self.node_GPs[k].posterior(X_node_k)
+                        if base_samples is not None:
+                            nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample(base_samples=base_samples[i, :, :, k])[0, :, :, 0]
+                        else:
+                            nodes_samples[i, :, :, k] = multivariate_normal_at_node_k.rsample()[0, :, :, 0]
                     nodes_samples_available[k] = True
                     t1 = time.time()
                     print('Part B of the code took: ' + str(t1 - t0))
         #t1 = time.time()
         #print('Taking this sample took: ' + str(t1 - t0))
         return nodes_samples
+        

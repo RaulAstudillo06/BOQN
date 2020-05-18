@@ -60,7 +60,6 @@ target/
 *.pyc
 .cache
 __pycache__/
-*.png
 *.dat
 *.idea
 *.pstats
@@ -68,3 +67,8 @@ __pycache__/
 # Experimental results
 experiments/
 experiments_results/
+
+# Plots
+*.png
+*.pdf
+*.eps
