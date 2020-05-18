@@ -95,7 +95,7 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         q=BATCH_SIZE,
         num_restarts=10*n_nodes,
         raw_samples=100*n_nodes,
-        options={'disp': True, 'iprint': 101}
+        #options={'disp': True, 'iprint': 101},
     )
     # suggested point(s)
     new_x = candidates.detach()

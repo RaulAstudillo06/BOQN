@@ -135,7 +135,7 @@ class NetworkMultivariateNormal(Posterior):
         nodes_samples = nodes_samples.double()
         nodes_samples_available = [False for k in range(self.n_nodes)]
         for k in self.root_nodes:
-            t0 =  time.time()
+            #t0 =  time.time()
             if self.active_input_indices is not None:
                 X_node_k = self.X[..., self.active_input_indices[k]]
             else:
@@ -146,14 +146,14 @@ class NetworkMultivariateNormal(Posterior):
             else:
                 nodes_samples[..., k] = multivariate_normal_at_node_k.rsample(sample_shape)[..., 0]
             nodes_samples_available[k] = True
-            t1 = time.time()
-            print('Part A of the code took: ' + str(t1 - t0))
+            #t1 = time.time()
+            #print('Part A of the code took: ' + str(t1 - t0))
   
         while not all(nodes_samples_available):
             for k in range(self.n_nodes): 
                 parent_nodes = self.dag.get_parent_nodes(k)
                 if not nodes_samples_available[k] and all([nodes_samples_available[j] for j in parent_nodes]):
-                    t0 =  time.time()
+                    #t0 =  time.time()
                     parent_nodes_samples_normalized = nodes_samples[..., parent_nodes].clone()
                     for j in range(len(parent_nodes)):
                             parent_nodes_samples_normalized[..., j] = (parent_nodes_samples_normalized[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
@@ -166,8 +166,8 @@ class NetworkMultivariateNormal(Posterior):
                     else:
                         nodes_samples[..., k] = multivariate_normal_at_node_k.rsample()[0, ..., 0]
                     nodes_samples_available[k] = True
-                    t1 = time.time()
-                    print('Part B of the code took: ' + str(t1 - t0))
+                    #t1 = time.time()
+                    #print('Part B of the code took: ' + str(t1 - t0))
         #t1 = time.time()
         #print('Taking this sample took: ' + str(t1 - t0))
         return nodes_samples
