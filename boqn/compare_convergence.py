@@ -20,7 +20,7 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'alpine2_4'
+experiment = 'langermann'
 #type_of_data = 'underlying_regret'
 type_of_data = 'underlying_optimal_values'
 n_replications = 10
