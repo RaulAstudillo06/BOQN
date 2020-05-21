@@ -14,24 +14,27 @@ project_path = script_dir[:-5]
 results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
-from alpine2 import Alpine2
+from langermann import Langermann
 from dag import DAG
 n_nodes = 6
-test_problem = 'alpine2_' + str(n_nodes)
+input_dim = 2
+test_problem = 'langermann'
     # Define network structure
 dag_as_list = []
-dag_as_list.append([])
 for k in range(n_nodes - 1):
-    dag_as_list.append([k])
+    dag_as_list.append([])
+dag_as_list.append([k for k in range(n_nodes - 1)])
 dag= DAG(dag_as_list)
 
 active_input_indices = []
-for k in range(n_nodes):
-    active_input_indices.append([k])  
+for k in range(n_nodes - 1):
+    active_input_indices.append([0, 1])
+active_input_indices.append([])
 
 main_input_indices = []
-for k in range(n_nodes):
-    main_input_indices.append([k]) 
+for k in range(n_nodes - 1):
+    main_input_indices.append([0, 1])
+main_input_indices.append([])
 
 # EI-QN especifics
 from botorch.acquisition.objective import GenericMCObjective
@@ -74,7 +77,7 @@ def update_random_observations(best_Random):
     """Simulates a random policy by taking a the current list of best values observed randomly,
     drawing a new random point, observing its value, and updating the list.
     """
-    x = torch.rand([1, 1, n_nodes])
+    x = torch.rand([1, 1, input_dim])
     simulator_output = simulator.evaluate(x)
     fx = output_for_EI(simulator_output)
     next_Random_best = fx.max().item()
@@ -84,7 +87,7 @@ def update_random_observations(best_Random):
 # Acquisition function optimization
 from botorch.optim import optimize_acqf
 
-bounds = torch.tensor([[0. for i in range(n_nodes)], [1. for i in range(n_nodes)]])
+bounds = torch.tensor([[0. for i in range(input_dim)], [1. for i in range(input_dim)]])
 
 def optimize_acqf_and_get_suggested_point(acq_func):
     """Optimizes the acquisition function, and returns a new candidate."""
@@ -93,13 +96,13 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         acq_function=acq_func,
         bounds=bounds,
         q=BATCH_SIZE,
-        num_restarts=10*n_nodes,
-        raw_samples=100*n_nodes,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
         #options={'disp': True, 'iprint': 101},
     )
     # suggested point(s)
     new_x = candidates.detach()
-    new_x =  new_x.view([1, BATCH_SIZE, n_nodes])
+    new_x =  new_x.view([1, BATCH_SIZE, input_dim])
     return new_x
 
 # Function to generate initial data
@@ -108,15 +111,15 @@ def generate_initial_X(n, seed=None):
     if seed is not None:
         old_state = torch.random.get_rng_state()
         torch.manual_seed(seed)
-        X = torch.rand([1, n, n_nodes])
+        X = torch.rand([1, n, input_dim])
         torch.random.set_rng_state(old_state)
     else:
-        X = torch.rand([1, n, n_nodes])
+        X = torch.rand([1, n, input_dim])
     return X
 
 # Run BO loop times
-N_BATCH = 150
-simulator = Alpine2(n_nodes=n_nodes)
+N_BATCH = 100
+simulator = Langermann()
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
     return g_mapping(simulator.evaluate(X))[..., 0]
@@ -126,8 +129,8 @@ if False:
         acq_function=my_objective,
         bounds=bounds,
         q=BATCH_SIZE,
-        num_restarts=10*n_nodes,
-        raw_samples=100*n_nodes,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
         #options={'iprint': 101},
     )
 if not os.path.exists(results_folder) :
@@ -140,7 +143,7 @@ if len(sys.argv) > 1:
     trial = int(sys.argv[1])
     
     # call helper functions to generate initial training data and initialize model
-    X = generate_initial_X(n=2*(n_nodes+1), seed=trial)
+    X = generate_initial_X(n=2*(input_dim+1), seed=trial)
     simulator_output_at_X = simulator.evaluate(X)
     #print(X)
     #print(simulator_output_at_X)

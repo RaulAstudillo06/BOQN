@@ -20,14 +20,14 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'gps_in_series_4'
+experiment = 'alpine2_4'
 #type_of_data = 'underlying_regret'
 type_of_data = 'underlying_optimal_values'
 n_replications = 10
-n_iterations = 25
+n_iterations = 100
 #algorithms = ['Random', 'ParEGO', 'uTS', 'uEI']
 #legend_names = ['Random', 'ParEGO', 'TS-UU', 'EI-UU']
-algorithms = ['Random', 'EI', 'EIQN', 'naive_EIQN']
+algorithms = ['Random', 'EI', 'EIQN']
 legend_names = ['Random', 'EI', 'EI-QN', 'naive EI-QN']
 colors = ['violet',  'red', 'blue', 'cyan']
 dcolors = ['darkviolet', 'darkred', 'darkblue', 'darkcyan']

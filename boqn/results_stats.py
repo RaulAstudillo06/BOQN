@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'alpine2_4'
-sampling_policy = 'EIQN'
+experiment = 'alpine2_6'
+sampling_policy = 'Random'
 type_of_data = 'value'
 #type_of_data = 'underlying_regret'
 n_files = 10
-n_iterations = 50
+n_iterations = 100
 data = np.empty((n_iterations, n_files))
 min_number_of_iterations = n_iterations
 i_aux = 0

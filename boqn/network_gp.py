@@ -156,7 +156,7 @@ class NetworkMultivariateNormal(Posterior):
                     #t0 =  time.time()
                     parent_nodes_samples_normalized = nodes_samples[..., parent_nodes].clone()
                     for j in range(len(parent_nodes)):
-                            parent_nodes_samples_normalized[..., j] = (parent_nodes_samples_normalized[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
+                        parent_nodes_samples_normalized[..., j] = (parent_nodes_samples_normalized[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
                     X_node_k = self.X[..., self.active_input_indices[k]]
                     X_node_k = X_node_k.unsqueeze(0).repeat(sample_shape[0], 1, 1, 1)
                     X_node_k = torch.cat([X_node_k, parent_nodes_samples_normalized], 3)
