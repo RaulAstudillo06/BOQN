@@ -14,12 +14,11 @@ project_path = script_dir[:-5]
 results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
-from langermann5 import Langermann5
+from ackley import Ackley
 from dag import DAG
-m = 2
-n_nodes = m + 1
-input_dim = 3
-test_problem = 'langermann5'
+n_nodes = 3
+input_dim = 5
+test_problem = 'ackley_' + str(input_dim) 
     # Define network structure
 dag_as_list = []
 for k in range(n_nodes - 1):
@@ -29,12 +28,12 @@ dag= DAG(dag_as_list)
 
 active_input_indices = []
 for k in range(n_nodes - 1):
-    active_input_indices.append([0, 1])
+    active_input_indices.append([i for i in range(input_dim)])
 active_input_indices.append([])
 
 main_input_indices = []
 for k in range(n_nodes - 1):
-    main_input_indices.append([0, 1])
+    main_input_indices.append([i for i in range(input_dim)])
 main_input_indices.append([])
 
 # EI-QN especifics
@@ -120,7 +119,7 @@ def generate_initial_X(n, seed=None):
 
 # Run BO loop times
 N_BATCH = 100
-simulator = Langermann5(input_dim, m)
+simulator = Ackley(input_dim)
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
     return g_mapping(simulator.evaluate(X))[..., 0]

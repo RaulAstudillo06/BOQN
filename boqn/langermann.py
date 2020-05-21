@@ -12,13 +12,13 @@ class Langermann:
         print(X)
         c = self.c
         A = self.A
-        X_scaled = 10 * X.clone()
+        X_scaled = 10 * X
         output = torch.zeros(X_scaled.shape[:-1] + torch.Size([6]))
         for j in range(5):
             for i in range(2):
                 output[..., j] += torch.pow(X_scaled[..., i] - A[i, j], 2)
         
         for j in range(5):
-            output[..., 5] -= c[j] * torch.exp(-output[..., j]/math.pi) * torch.cos(math.pi * output[..., j])
+            output[..., 5] += c[j] * torch.exp(-output[..., j]/math.pi) * torch.cos(math.pi * output[..., j])
         print(output)   
         return output
