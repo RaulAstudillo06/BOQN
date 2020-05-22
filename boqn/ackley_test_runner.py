@@ -56,6 +56,7 @@ BATCH_SIZE = 1
 from botorch.models import FixedNoiseGP, HeteroskedasticSingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition import ExpectedImprovement
+from botorch.acquisition import PosteriorMean as GPPosteriorMean
 from botorch import fit_gpytorch_model
 from botorch.models.transforms import Standardize
 
@@ -113,14 +114,14 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
         #options={'disp': True, 'iprint': 101},
     )
     
-    baseline_acq_value = acq_func.forward(baseline_candidate)
+    baseline_acq_value = acq_func.forward(baseline_candidate).detach()
     print('Test begins')
     print(acq_value)
     print(baseline_acq_value)
     print('Test ends')
     if baseline_acq_value >= acq_value:
-        print('Baseline point was best found.')
-        candidate = baseline
+        print('Baseline candidate was best found.')
+        candidate = baseline_candidate
     new_x = candidate.detach()
     new_x =  new_x.view([1, BATCH_SIZE, input_dim])
     return new_x
@@ -157,8 +158,8 @@ if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
 run_Random =  False
-run_EI = False
-run_EIQN = True
+run_EI = True
+run_EIQN = False
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])
     
@@ -224,8 +225,9 @@ if len(sys.argv) > 1:
         if run_EI:
             fit_gpytorch_model(mll_EI)
             EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
+            posterior_mean_EI = GPPosteriorMean(model=model_EI)
             
-            new_x_EI = optimize_acqf_and_get_suggested_point(EI)
+            new_x_EI = optimize_acqf_and_get_suggested_point(EI, posterior_mean_EI)
             new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
             
             X_EI = torch.cat([X_EI, new_x_EI], 1)
