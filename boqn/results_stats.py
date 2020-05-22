@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'langermann'
-sampling_policy = 'EIQN'
-type_of_data = 'value'
-#type_of_data = 'underlying_regret'
+experiment = 'ackley_6'
+sampling_policy = 'Random'
+#type_of_data = 'value'
+type_of_data = 'log_regret'
 n_files = 10
-n_iterations = 100
+n_iterations = 65
 data = np.empty((n_iterations, n_files))
 min_number_of_iterations = n_iterations
 i_aux = 0
@@ -16,8 +16,8 @@ for i in range(n_files):
     #aux = np.loadtxt(main_path + secondary_path + experiment + '_' + sampling_policy + '_' + str(i + 1) + '.txt', unpack=True)[:n_iterations]
     try:
         print(i)
-        if type_of_data == 'underlying_regret':
-            aux = np.log10(np.loadtxt(main_path + secondary_path + '/' + experiment + '/historical_underlying_regret/' + experiment + '_' +sampling_policy + '_' + type_of_data + '_' + str(i + 1) + '.txt', unpack=True)[:n_iterations])
+        if type_of_data == 'log_regret':
+            aux = np.log10(-np.loadtxt(main_path + secondary_path + experiment + '_' + sampling_policy + '_' + str(i + 1) + '.txt', unpack=True)[:n_iterations])
         elif type_of_data == 'value':
             aux = np.loadtxt(main_path + secondary_path + experiment + '_' + sampling_policy + '_' + str(i + 1) + '.txt', unpack=True)[:n_iterations]
         elif type_of_data == 'integrated_optimal_values':

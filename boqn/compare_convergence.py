@@ -20,11 +20,9 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 main_path = '/home/raul/Projects/BOQN/experiments_results/'
 secondary_path = ''
-experiment = 'langermann'
-#type_of_data = 'underlying_regret'
-type_of_data = 'underlying_optimal_values'
+experiment = 'ackley_6'
 n_replications = 10
-n_iterations = 100
+n_iterations = 65
 #algorithms = ['Random', 'ParEGO', 'uTS', 'uEI']
 #legend_names = ['Random', 'ParEGO', 'TS-UU', 'EI-UU']
 algorithms = ['Random', 'EI', 'EIQN']

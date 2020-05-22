@@ -41,6 +41,7 @@ from botorch.acquisition.objective import GenericMCObjective
 from network_gp import NetworkGP
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qNoisyExpectedImprovement
 from botorch.sampling.samplers import SobolQMCNormalSampler
+from posterior_mean import PosteriorMean
 
 g_mapping = lambda Y: Y[..., -1]
 g = GenericMCObjective(g_mapping)
@@ -89,10 +90,10 @@ from botorch.optim import optimize_acqf
 
 bounds = torch.tensor([[0. for i in range(input_dim)], [1. for i in range(input_dim)]])
 
-def optimize_acqf_and_get_suggested_point(acq_func):
+def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
     """Optimizes the acquisition function, and returns a new candidate."""
     # optimize
-    candidates, _ = optimize_acqf(
+    candidate, acq_value = optimize_acqf(
         acq_function=acq_func,
         bounds=bounds,
         q=BATCH_SIZE,
@@ -100,8 +101,19 @@ def optimize_acqf_and_get_suggested_point(acq_func):
         raw_samples=100*input_dim,
         #options={'disp': True, 'iprint': 101},
     )
-    # suggested point(s)
-    new_x = candidates.detach()
+    
+    baseline, _ = optimize_acqf(
+        acq_function=posterior_mean,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
+        #options={'disp': True, 'iprint': 101},
+    )
+    baseline_acq_value = acq_func.forward(baseline)
+    if baseline_acq_value > acq_value:
+        candidate = baseline
+    new_x = candidate.detach()
     new_x =  new_x.view([1, BATCH_SIZE, input_dim])
     return new_x
 
@@ -136,8 +148,8 @@ if False:
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
-run_Random =  True
-run_EI = True
+run_Random =  False
+run_EI = False
 run_EIQN = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])
@@ -181,10 +193,14 @@ if len(sys.argv) > 1:
                 best_f=best_value_EIQN,
                 sampler=qmc_sampler,
                 objective=g,
-    
+            )
+            posterior_mean_EIQN = PosteriorMean(
+                model=model_EIQN, 
+                sampler=qmc_sampler,
+                objective=g,
             )
             t0 = time.time()
-            new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN)
+            new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN, posterior_mean_EIQN)
             t1 = time.time()
             print('Optimizing the acquisition function took: ' + str(t1 - t0))
             new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
