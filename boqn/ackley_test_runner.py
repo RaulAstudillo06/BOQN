@@ -18,7 +18,7 @@ from ackley import Ackley
 from dag import DAG
 n_nodes = 3
 input_dim = 5
-test_problem = 'ackley_' + str(input_dim) 
+test_problem = 'ackley_' + str(input_dim) + '_opt' 
     # Define network structure
 dag_as_list = []
 for k in range(n_nodes - 1):
@@ -87,34 +87,39 @@ def update_random_observations(best_Random):
 
 # Acquisition function optimization
 from botorch.optim import optimize_acqf
+from custom_optimizer import custom_optimize_acqf
 
 bounds = torch.tensor([[0. for i in range(input_dim)], [1. for i in range(input_dim)]])
 
 def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
     """Optimizes the acquisition function, and returns a new candidate."""
-    # optimize
-    candidate, acq_value = optimize_acqf(
-        acq_function=acq_func,
-        bounds=bounds,
-        q=BATCH_SIZE,
-        num_restarts=10*input_dim,
-        raw_samples=100*input_dim,
-        #options={'disp': True, 'iprint': 101},
-    )
-    
-    baseline, _ = optimize_acqf(
+    baseline_candidate, _ = optimize_acqf(
         acq_function=posterior_mean,
         bounds=bounds,
         q=BATCH_SIZE,
         num_restarts=10*input_dim,
         raw_samples=100*input_dim,
+    )
+
+    baseline_candidate = baseline_candidate.view([1, BATCH_SIZE, input_dim])
+    
+    candidate, acq_value = custom_optimize_acqf(
+        acq_function=acq_func,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
+        baseline_initial_conditions=baseline_candidate,
         #options={'disp': True, 'iprint': 101},
     )
-    baseline_acq_value = acq_func.forward(baseline)
-    if baseline_acq_value > acq_value:
+    
+    baseline_acq_value = acq_func.forward(baseline_candidate)
+    print('Test begins')
+    print(acq_value)
+    print(baseline_acq_value)
+    print('Test ends')
+    if baseline_acq_value >= acq_value:
         print('Baseline point was best found.')
-        print(acq_value)
-        print(baseline_acq_value)
         candidate = baseline
     new_x = candidate.detach()
     new_x =  new_x.view([1, BATCH_SIZE, input_dim])
