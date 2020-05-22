@@ -112,6 +112,9 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
     )
     baseline_acq_value = acq_func.forward(baseline)
     if baseline_acq_value > acq_value:
+        print('Baseline point was best found.')
+        print(acq_value)
+        print(baseline_acq_value)
         candidate = baseline
     new_x = candidate.detach()
     new_x =  new_x.view([1, BATCH_SIZE, input_dim])
