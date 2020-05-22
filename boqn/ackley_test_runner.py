@@ -114,7 +114,7 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
         #options={'disp': True, 'iprint': 101},
     )
     
-    baseline_acq_value = acq_func.forward(baseline_candidate).detach()
+    baseline_acq_value = acq_func.forward(baseline_candidate)[0].detach()
     print('Test begins')
     print(acq_value)
     print(baseline_acq_value)
@@ -158,8 +158,8 @@ if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
 run_Random =  False
-run_EI = True
-run_EIQN = False
+run_EI = False
+run_EIQN = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])
     
