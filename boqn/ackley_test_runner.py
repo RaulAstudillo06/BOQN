@@ -11,14 +11,14 @@ debug._set_state(True)
 # Get script directory
 script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
 project_path = script_dir[:-5]
-results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
 from ackley import Ackley
 from dag import DAG
 n_nodes = 3
 input_dim = 6
-test_problem = 'ackley_' + str(input_dim) 
+test_problem = 'ackley_' + str(input_dim)
+results_folder = project_path + '/experiments_results/' + test_problem + '/'
     # Define network structure
 dag_as_list = []
 for k in range(n_nodes - 1):
