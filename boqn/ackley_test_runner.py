@@ -17,8 +17,8 @@ results_folder = project_path + '/experiments_results/'
 from ackley import Ackley
 from dag import DAG
 n_nodes = 3
-input_dim = 5
-test_problem = 'ackley_' + str(input_dim) + '_opt' 
+input_dim = 6
+test_problem = 'ackley_' + str(input_dim) 
     # Define network structure
 dag_as_list = []
 for k in range(n_nodes - 1):
@@ -139,7 +139,7 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 100
+N_BATCH = 120
 simulator = Ackley(input_dim)
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
@@ -157,8 +157,8 @@ if False:
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
-run_Random =  False
-run_EI = False
+run_Random = True
+run_EI = True
 run_EIQN = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])

@@ -16,7 +16,7 @@ results_folder = project_path + '/experiments_results/'
 # Simulator setup
 from alpine2 import Alpine2
 from dag import DAG
-n_nodes = 6
+n_nodes = 4
 test_problem = 'alpine2_' + str(n_nodes)
     # Define network structure
 dag_as_list = []
@@ -115,7 +115,7 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 150
+N_BATCH = 100
 simulator = Alpine2(n_nodes=n_nodes)
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
