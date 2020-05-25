@@ -154,7 +154,9 @@ class queues_in_series:
 
         return avg_output, stderr_output, avg_loss, stderr_loss
     
-    def evaluate(self, service_rates_tensor, max_queue_len_tensor):
+    def evaluate(self, decision_variables_tensor):
+        service_rates_tensor = decision_variables_tensor[..., :self.nqueues]
+        max_queue_len_tensor = decision_variables_tensor[..., self.nqueues:]
         service_rates_tensor_copy = (1.2 * self.nqueues) * service_rates_tensor.clone()
         max_queue_len_tensor_copy = (1.2 * self.nqueues) * max_queue_len_tensor.clone()
         input_shape = service_rates_tensor_copy.shape
@@ -171,6 +173,7 @@ class queues_in_series:
                 output[i, j, :, 2] = torch.tensor(avg_loss)
                 output[i, j, :, 3] = torch.tensor(stderr_loss)
         output = output.double()
+        print(output.shape)
         return output
 
     @staticmethod
