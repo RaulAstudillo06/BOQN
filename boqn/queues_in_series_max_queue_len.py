@@ -14,7 +14,6 @@ class queues_in_series:
 
 
         self.nqueues = nqueues
-        self.max_server_capacity = 1.2 * nqueues
         self.arrival_rate = arrival_rate
 
         # This will keep track of the jobs in service in each queue

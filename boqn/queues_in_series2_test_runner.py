@@ -14,8 +14,8 @@ project_path = script_dir[:-5]
 
 # Simulator setup
 from dag import DAG
-n_nodes = 6
-n_queues = int(n_nodes/2)
+n_queues = 2
+n_nodes = 2 * n_queues
 input_dim = n_nodes
 test_problem = 'queues_in_series2_' + str(n_queues)
 results_folder = project_path + '/experiments_results/' + test_problem + '/'
@@ -36,7 +36,8 @@ main_input_indices = []
 for i in range(2):
     for k in range(n_queues):
         main_input_indices.append([j for j in range(k + 1)] + [n_queues + j for j in range(k + 1)])
-
+print(dag_as_list)
+print(active_input_indices)
 # EI-QN especifics
 from botorch.acquisition.objective import GenericMCObjective
 from network_gp import NetworkGP
@@ -44,7 +45,7 @@ from botorch.acquisition.monte_carlo import qExpectedImprovement, qNoisyExpected
 from botorch.sampling.samplers import SobolQMCNormalSampler
 from posterior_mean import PosteriorMean
 
-g_mapping = lambda Y: torch.sum(Y[..., -n_nodes:], dim=-1)
+g_mapping = lambda Y: -torch.sum(Y[..., -n_queues:], dim=-1)
 g = GenericMCObjective(g_mapping)
 
 def output_for_EIQN(simulator_output):
@@ -65,8 +66,7 @@ from botorch import fit_gpytorch_model
 from botorch.models.transforms import Standardize
 
 def output_for_EI(simulator_output):
-    output = torch.empty(simulator_output.shape[:-2] + torch.Size([1]))
-    output =  torch.sum(simulator_output[..., 2], dim=-1, keepdim=True)
+    output =  -torch.sum(simulator_output[..., 2], dim=-1, keepdim=True)
     return output
 
 
@@ -85,7 +85,9 @@ def update_random_observations(best_Random):
     """Simulates a random policy by taking a the current list of best values observed randomly,
     drawing a new random point, observing its value, and updating the list.
     """
-    x = torch.rand([1, 1, input_dim])
+    x = np.random.dirichlet(np.ones((input_dim, )), 1)
+    x = torch.from_numpy(x)
+    x = x.view([1, 1, input_dim])
     simulator_output = simulator.evaluate(x)
     fx = output_for_EI(simulator_output)
     next_Random_best = fx.max().item()
@@ -106,6 +108,7 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
         q=BATCH_SIZE,
         num_restarts=10*input_dim,
         raw_samples=100*input_dim,
+        equality_constraints=[(torch.tensor([i for i in range(input_dim)]), torch.tensor([1. for i in range(input_dim)]), 1.)],
     )
 
     baseline_candidate = baseline_candidate.view([1, BATCH_SIZE, input_dim])
@@ -117,6 +120,7 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
         num_restarts=10*input_dim,
         raw_samples=100*input_dim,
         baseline_initial_conditions=baseline_candidate,
+        equality_constraints=[(torch.tensor([i for i in range(input_dim)]), torch.tensor([1. for i in range(input_dim)]), 1.)],
         #options={'disp': True, 'iprint': 101},
     )
     
@@ -136,34 +140,22 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
 def generate_initial_X(n, seed=None):
     # generate training data
     if seed is not None:
-        old_state = torch.random.get_rng_state()
-        torch.manual_seed(seed)
-        X = torch.rand([1, n, input_dim])
-        torch.random.set_rng_state(old_state)
+        random_state = np.random.RandomState(seed)
+        X = random_state.dirichlet(np.ones((input_dim, )), n)
     else:
-        X = torch.rand([1, n, input_dim])
+        X = np.random.dirichlet(np.ones((input_dim, )), n)
+    X = torch.from_numpy(X)
+    X = X.view((1, n, input_dim))
     return X
 
 # Run BO loop times
-N_BATCH = 120
+N_BATCH = 25 * input_dim
 simulator_seed = 1
 from queues_in_series_max_queue_len import queues_in_series
 simulator = queues_in_series(nqueues=n_queues, arrival_rate=1., seed=simulator_seed)
-def my_objective(X):
-    print(g_mapping(simulator.evaluate(X))[..., 0].shape)
-    return g_mapping(simulator.evaluate(X))[..., 0]
 
-if False:
-    x_opt, val_opt = optimize_acqf(
-        acq_function=my_objective,
-        bounds=bounds,
-        q=BATCH_SIZE,
-        num_restarts=10*input_dim,
-        raw_samples=100*input_dim,
-        #options={'iprint': 101},
-    )
-if not os.path.exists(results_folder) :
-            os.makedirs(results_folder)
+if not os.path.exists(results_folder):
+    os.makedirs(results_folder)
 
 run_Random = True
 run_EI = True
@@ -181,12 +173,14 @@ if len(sys.argv) > 1:
         best_observed_EIQN = []
         X_EIQN = X.clone()
         fX_EIQN = output_for_EIQN(simulator_output_at_X)
+        print(fX_EIQN)
         best_value_EIQN = g_mapping(fX_EIQN).max().item()
         best_observed_EIQN.append(best_value_EIQN)
     if run_EI:
         best_observed_EI = []
         X_EI = X.clone()
         fX_EI = output_for_EI(simulator_output_at_X)
+        print(fX_EI)
         mll_EI, model_EI = initialize_model(X_EI, fX_EI)
         best_value_EI = fX_EI.max().item()
         best_observed_EI.append(best_value_EI)
