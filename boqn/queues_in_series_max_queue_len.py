@@ -2,9 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-# This is the penalty that we pay for increasing the max queue size
-QUEUE_SIZE_PENALTY = 0.1
-
 class queues_in_series:
 
     def __init__(self, nqueues, arrival_rate=1., seed=None, loglevel=0):
@@ -28,6 +25,9 @@ class queues_in_series:
 
         # Track how many jobs have completed service at each queue
         self.ncompletions = [0] * self.nqueues
+
+        # Track how many jobs we've lost because we exceeded the max queue length
+        self.abandons = [0] * self.nqueues
         
         # Set random seed
         self.seed = seed
@@ -90,6 +90,8 @@ class queues_in_series:
             if event < self.nqueues-1: # If this wasn't the last queue
                 if self.qlen[event+1] < self.max_queue_len[event+1]: # if there is space in the next queue
                     self.qlen[event+1] += 1 # add the job to the next queue
+                else:
+                    self.abandons[event+1] += 1
                 if self.loglevel >= 1:
                     self.arrivals[event+1].append(self.t)
 
@@ -98,6 +100,8 @@ class queues_in_series:
                 self.arrivals[0].append(self.t)
             if self.qlen[0] < self.max_queue_len[0]:  # if there is space in this queue
                 self.qlen[0] += 1
+            else:
+                self.abandons[0] += 1
 
     def simulate(self, maxT):
         # Run a simulation until we hit a maximum time
@@ -107,13 +111,6 @@ class queues_in_series:
     def throughput(self):
         # Return the throughput at each queue
         return self.ncompletions
-
-    def max_queue_size_penalty(self):
-        return QUEUE_SIZE_PENALTY * np.sum(self.max_queue_len)
-
-    def objective(self):
-        # Objective function
-        return self.throughput() - self.max_queue_size_penalty()
 
     def inservice(self):
         # Return the number of items of work that are currently in service
@@ -125,6 +122,7 @@ class queues_in_series:
         self.qlen = [0] * self.nqueues
         self.t = 0
         self.ncompletions = [0] * self.nqueues
+        self.abandons = [0] * self.nqueues
         if self.loglevel >= 1:
             self.completions = [[0.] * 0 for q in range(self.nqueues)]
             self.arrivals = [[0.] * 0 for q in range(self.nqueues)]
@@ -132,39 +130,46 @@ class queues_in_series:
     def simulate_several(self, nreps=500, maxT=10):
         # Run the simulation several times and compute sample mean and stderr for the output of each queue
         self.random_state = np.random.RandomState(self.seed)
-        # For each queue, we'll maintain a list of outputs
+        # For each queue, we'll maintain a list of outputs (throughput) and the loss from that queue
         outputs = np.empty((0, self.nqueues))
+        loss = np.empty((0, self.nqueues))
 
         for i in range(nreps):
             self.reset()
             self.simulate(maxT)
             # Store the outputs so that output[i,q] stores the throughput for simulation i and queue q
-            outputs = np.append(outputs,[self.objective()],axis=0)
+            outputs = np.append(outputs,[self.throughput()],axis=0)
+            loss = np.append(loss,[self.abandons],axis=0)
 
         # Calculate mean and standard deviation for each queue
-        avg = [np.mean(outputs[:,q]) for q in range(self.nqueues) ]
-        stderr = [np.std(outputs[:,q])/np.sqrt(nreps) for q in range(self.nqueues) ]
+        avg_output = [np.mean(outputs[:,q]) for q in range(self.nqueues) ]
+        avg_loss = [np.mean(loss[:,q]) for q in range(self.nqueues) ]
+        stderr_output = [np.std(outputs[:,q])/np.sqrt(nreps) for q in range(self.nqueues) ]
+        stderr_loss = [np.std(loss[:,q])/np.sqrt(nreps) for q in range(self.nqueues) ]
 
         if self.loglevel >= 1:
             for q in range(self.nqueues):
-                print('queue {} objective avg={:.2f} stderr={:.2f}'.format(q, avg[q], stderr[q]))
+                print('queue {} throughput avg={:.2f} stderr={:.2f}'.format(q, avg_output[q], stderr_output[q]))
+                print('queue {} loss avg={:.2f} stderr={:.2f}'.format(q, avg_loss[q], stderr_loss[q]))
 
-        return avg, stderr
+        return avg_output, stderr_output, avg_loss, stderr_loss
     
     def evaluate(self, service_rates_tensor, max_queue_len_tensor):
         service_rates_tensor_copy = (1.2 * self.nqueues) * service_rates_tensor.clone()
         max_queue_len_tensor_copy = (1.2 * self.nqueues) * max_queue_len_tensor.clone()
         input_shape = service_rates_tensor_copy.shape
-        output = torch.empty(input_shape[:-1] + torch.Size([self.nqueues, 2]))
+        output = torch.empty(input_shape[:-1] + torch.Size([self.nqueues, 4]))
         for i in range(input_shape[0]):
             for j in range(input_shape[1]):
                 self.service_rate = list(service_rates_tensor_copy[i, j, :])
                 self.max_queue_len = list(max_queue_len_tensor_copy[i, j, :])
                 if len(self.service_rate) == self.nqueues - 1:
                     print(error)#self.service_rate.append(self.nqueues * 1.2 - sum(self.service_rate))
-                avg, stderr = self.simulate_several()
-                output[i, j, :, 0] = torch.tensor(avg)
-                output[i, j, :, 1] = torch.tensor(stderr)
+                avg_output, stderr_output, avg_loss, stderr_loss = self.simulate_several()
+                output[i, j, :, 0] = torch.tensor(avg_output)
+                output[i, j, :, 1] = torch.tensor(stderr_output)
+                output[i, j, :, 2] = torch.tensor(avg_loss)
+                output[i, j, :, 3] = torch.tensor(stderr_loss)
         output = output.double()
         return output
 
