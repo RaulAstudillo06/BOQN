@@ -139,14 +139,13 @@ class queues_in_series:
         return avg, stderr
     
     def evaluate(self, service_rates_tensor):
-        service_rates_tensor_copy = (1.2 * self.nqueues) * service_rates_tensor.clone()
+        service_rates_tensor_copy = (1.2 * self.nqueues) * service_rates_tensor
         input_shape = service_rates_tensor_copy.shape
         output = torch.empty(input_shape[:-1] + torch.Size([self.nqueues, 2]))
         for i in range(input_shape[0]):
             for j in range(input_shape[1]):
                 self.service_rate = list(service_rates_tensor_copy[i, j, :])
-                if len(self.service_rate) == self.nqueues - 1:
-                    print(error)#self.service_rate.append(self.nqueues * 1.2 - sum(self.service_rate))
+                
                 avg, stderr = self.simulate_several()
                 output[i, j, :, 0] = torch.tensor(avg)
                 output[i, j, :, 1] = torch.tensor(stderr)
