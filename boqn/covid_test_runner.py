@@ -69,7 +69,7 @@ def output_for_EI(simulator_output):
 def initialize_model(X, Y, Yvar=None, state_dict=None):
     # define model
     #model = HeteroskedasticSingleTaskGP(X, Y, Yvar)
-    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     # load state dict if it is passed
     if state_dict is not None:
