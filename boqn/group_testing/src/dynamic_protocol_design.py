@@ -7,7 +7,7 @@ import sys
 from copy import deepcopy
 import random
 
-def test_properties(prevalence, group_size, FNR = 0.3, FPR = 0.1, n_households = 10000, nreps = 100):
+def test_properties(prevalence, group_size, FNR = 0.3, FPR = 0.1, n_households = 10000, nreps = 50):
     # To make the code accurate, use n_households = 22500 and n_reps = 100
     # To make it faster use the default parameters
     initial_prevalence = eval_r(match_r, prevalence)

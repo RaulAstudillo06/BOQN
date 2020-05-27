@@ -14,7 +14,7 @@ project_path = script_dir[:-5]
 
 # Simulator setup
 from dag import DAG
-n_periods = 2
+n_periods = 3
 n_nodes = 3 * n_periods
 input_dim = n_periods
 test_problem = 'covid_' + str(n_periods)
@@ -138,13 +138,19 @@ def generate_initial_X(n, seed=None):
         torch.random.set_rng_state(old_state)
     else:
         X = torch.rand([1, n, input_dim])
-    X = torch.cat([X, torch.tensor([[[0., 1.]]])], 1)
-    X = torch.cat([X, torch.tensor([[[.82945, .87082]]])], 1)
-    X = torch.cat([X, torch.tensor([[[0.0000, 0.9044]]])], 1)
+    if False:
+        X = torch.cat([X, torch.tensor([[[0., 1., 1.]]])], 1)
+        X = torch.cat([X, torch.tensor([[[1., 1., 0.9]]])], 1)
+        X = torch.cat([X, torch.tensor([[[0.1861, 0.9339, 1.]]])], 1)
+    if False:
+        X = torch.cat([X, torch.tensor([[[0., 1.]]])], 1)
+        X = torch.cat([X, torch.tensor([[[.82945, .87082]]])], 1)
+        X = torch.cat([X, torch.tensor([[[0.0000, 0.9044]]])], 1)
+        X = torch.cat([X, torch.tensor([[[0.7197, 0.9290]]])], 1)
     return X
 
 # Run BO loop times
-N_BATCH = 25 * input_dim
+N_BATCH = 100
 simulator_seed = 1
 from covid_simulator import CovidSimulator
 simulator = CovidSimulator(n_periods=n_periods, seed=simulator_seed)
@@ -152,7 +158,7 @@ simulator = CovidSimulator(n_periods=n_periods, seed=simulator_seed)
 if not os.path.exists(results_folder):
     os.makedirs(results_folder)
 
-run_Random = False
+run_Random = True
 run_EI = True
 run_EIQN = True
 if len(sys.argv) > 1:
