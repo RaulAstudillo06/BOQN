@@ -11,7 +11,6 @@ debug._set_state(True)
 # Get script directory
 script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
 project_path = script_dir[:-5]
-results_folder = project_path + '/experiments_results/'
 
 # Simulator setup
 from langermann import Langermann
@@ -19,6 +18,7 @@ from dag import DAG
 n_nodes = 6
 input_dim = 2
 test_problem = 'langermann'
+results_folder = project_path + '/experiments_results/' + test_problem + '/'
     # Define network structure
 dag_as_list = []
 for k in range(n_nodes - 1):
@@ -41,6 +41,7 @@ from botorch.acquisition.objective import GenericMCObjective
 from network_gp import NetworkGP
 from botorch.acquisition.monte_carlo import qExpectedImprovement, qNoisyExpectedImprovement
 from botorch.sampling.samplers import SobolQMCNormalSampler
+from posterior_mean import PosteriorMean
 
 g_mapping = lambda Y: Y[..., -1]
 g = GenericMCObjective(g_mapping)
@@ -57,6 +58,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition import ExpectedImprovement
 from botorch import fit_gpytorch_model
 from botorch.models.transforms import Standardize
+from botorch.acquisition import PosteriorMean as GPPosteriorMean
 
 def output_for_EI(simulator_output):
     return simulator_output[...,[-1]]
@@ -65,7 +67,7 @@ def output_for_EI(simulator_output):
 def initialize_model(X, Y, Yvar=None, state_dict=None):
     # define model
     #model = HeteroskedasticSingleTaskGP(X, Y, Yvar)
-    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     # load state dict if it is passed
     if state_dict is not None:
@@ -86,22 +88,41 @@ def update_random_observations(best_Random):
 
 # Acquisition function optimization
 from botorch.optim import optimize_acqf
+from custom_optimizer import custom_optimize_acqf
 
 bounds = torch.tensor([[0. for i in range(input_dim)], [1. for i in range(input_dim)]])
 
-def optimize_acqf_and_get_suggested_point(acq_func):
+def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
     """Optimizes the acquisition function, and returns a new candidate."""
-    # optimize
-    candidates, _ = optimize_acqf(
+    baseline_candidate, _ = optimize_acqf(
+        acq_function=posterior_mean,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
+    )
+
+    baseline_candidate = baseline_candidate.view([1, BATCH_SIZE, input_dim])
+    
+    candidate, acq_value = custom_optimize_acqf(
         acq_function=acq_func,
         bounds=bounds,
         q=BATCH_SIZE,
         num_restarts=10*input_dim,
         raw_samples=100*input_dim,
+        baseline_initial_conditions=baseline_candidate,
         #options={'disp': True, 'iprint': 101},
     )
-    # suggested point(s)
-    new_x = candidates.detach()
+    
+    baseline_acq_value = acq_func.forward(baseline_candidate)[0].detach()
+    print('Test begins')
+    print(acq_value)
+    print(baseline_acq_value)
+    print('Test ends')
+    if baseline_acq_value >= acq_value:
+        print('Baseline candidate was best found.')
+        candidate = baseline_candidate
+    new_x = candidate.detach()
     new_x =  new_x.view([1, BATCH_SIZE, input_dim])
     return new_x
 
@@ -133,8 +154,8 @@ if False:
         raw_samples=100*input_dim,
         #options={'iprint': 101},
     )
-if not os.path.exists(results_folder) :
-            os.makedirs(results_folder)
+if not os.path.exists(results_folder):
+    os.makedirs(results_folder)
 
 run_Random =  True
 run_EI = True
@@ -181,10 +202,14 @@ if len(sys.argv) > 1:
                 best_f=best_value_EIQN,
                 sampler=qmc_sampler,
                 objective=g,
-    
+            )
+            posterior_mean_EIQN = PosteriorMean(
+                model=model_EIQN, 
+                sampler=qmc_sampler,
+                objective=g,
             )
             t0 = time.time()
-            new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN)
+            new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN, posterior_mean_EIQN)
             t1 = time.time()
             print('Optimizing the acquisition function took: ' + str(t1 - t0))
             new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
@@ -200,8 +225,9 @@ if len(sys.argv) > 1:
         if run_EI:
             fit_gpytorch_model(mll_EI)
             EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
+            posterior_mean_EI = GPPosteriorMean(model=model_EI)
             
-            new_x_EI = optimize_acqf_and_get_suggested_point(EI)
+            new_x_EI = optimize_acqf_and_get_suggested_point(EI, posterior_mean_EI)
             new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
             
             X_EI = torch.cat([X_EI, new_x_EI], 1)

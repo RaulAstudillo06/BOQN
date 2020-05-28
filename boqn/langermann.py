@@ -9,7 +9,6 @@ class Langermann:
         
         
     def evaluate(self, X):
-        print(X)
         c = self.c
         A = self.A
         X_scaled = 10 * X
@@ -19,6 +18,5 @@ class Langermann:
                 output[..., j] += torch.pow(X_scaled[..., i] - A[i, j], 2)
         
         for j in range(5):
-            output[..., 5] += c[j] * torch.exp(-output[..., j]/math.pi) * torch.cos(math.pi * output[..., j])
-        print(output)   
+            output[..., 5] += c[j] * torch.exp(-output[..., j]/math.pi) * torch.cos(math.pi * output[..., j]) 
         return output

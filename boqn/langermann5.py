@@ -15,7 +15,6 @@ class Langermann5:
         self.A = torch.transpose(self.A, 0, 1)
         
     def evaluate(self, X):
-        print(X)
         c = self.c
         A = self.A
         X_scaled = 10 * X
@@ -26,5 +25,4 @@ class Langermann5:
         
         for j in range(self.m):
             output[..., self.m] += c[j] * torch.exp(-output[..., j]/math.pi) * torch.cos(math.pi * output[..., j])
-        print(output)   
         return output
