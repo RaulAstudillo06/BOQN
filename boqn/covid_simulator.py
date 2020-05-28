@@ -25,8 +25,9 @@ class CovidSimulator:
                 states = torch.tensor(states)
                 losses = torch.tensor(losses)
                 for t in range(self.n_periods):
-                    output[i, j, 3 * t] = states[t, 0]
-                    output[i, j, 3 * t + 1] = states[t, 1]
+                    aux = (1 - states[t, 0] - states[t, 1])
+                    output[i, j, 3 * t] = torch.log(states[t, 0]/aux) 
+                    output[i, j, 3 * t + 1] = torch.log(states[t, 1]/aux)
                     output[i, j, 3 * t + 2] = losses[t]
         return output
                 

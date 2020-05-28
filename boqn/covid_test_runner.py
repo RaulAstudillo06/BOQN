@@ -17,7 +17,7 @@ from dag import DAG
 n_periods = 3
 n_nodes = 3 * n_periods
 input_dim = n_periods
-test_problem = 'covid_' + str(n_periods)
+test_problem = 'covid_log_' + str(n_periods)
 results_folder = project_path + '/experiments_results/' + test_problem + '/'
     # Define network structure
 dag_as_list = []
