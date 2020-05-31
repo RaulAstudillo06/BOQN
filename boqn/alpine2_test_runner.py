@@ -16,7 +16,7 @@ project_path = script_dir[:-5]
 # Simulator setup
 from alpine2 import Alpine2
 from dag import DAG
-n_nodes = 2
+n_nodes = 6
 input_dim = n_nodes
 test_problem = 'alpine2_' + str(n_nodes)
 results_folder = project_path + '/experiments_results/' + test_problem + '/'
@@ -52,7 +52,7 @@ MC_SAMPLES = 512
 BATCH_SIZE = 1
 
 # EI especifics
-from botorch.models import FixedNoiseGP, HeteroskedasticSingleTaskGP
+from botorch.models import FixedNoiseGP, HeteroskedasticSingleTaskGP, SingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition import ExpectedImprovement
 from botorch.acquisition import PosteriorMean as GPPosteriorMean
@@ -65,13 +65,57 @@ def output_for_EI(simulator_output):
 
 def initialize_model(X, Y, Yvar=None, state_dict=None):
     # define model
-    #model = HeteroskedasticSingleTaskGP(X, Y, Yvar)
-    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-4, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
+    model = FixedNoiseGP(X, Y, torch.ones(Y.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     # load state dict if it is passed
     if state_dict is not None:
         model.load_state_dict(state_dict)
     return mll, model
+
+# KG especifics
+def initialize_model_KG(X, Y, Yvar=None, state_dict=None):
+    # define model
+    X_copy = X[0, ...]
+    Y_copy = Y[0, ...]
+    print(X_copy.shape)
+    print(Y_copy.shape)
+    model = FixedNoiseGP(X_copy, Y_copy, torch.ones(Y_copy.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    # load state dict if it is passed
+    if state_dict is not None:
+        model.load_state_dict(state_dict)
+    return mll, model
+
+from botorch.acquisition import qKnowledgeGradient
+#from custom_knowledge_gradient import KnowledgeGradient
+
+def optimize_KG_and_get_suggested_point(acq_func):
+    """Optimizes the KG acquisition function, and returns a new candidate."""
+    
+    candidate, _ = custom_optimize_acqf(
+        acq_function=acq_func,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
+        #options={'disp': True, 'iprint': 101},
+    )
+    
+    new_x = candidate.detach()
+    new_x =  new_x.view([1, BATCH_SIZE, input_dim])
+    return new_x
+
+# Function to generate initial data
+def generate_initial_X(n, seed=None):
+    # generate training data
+    if seed is not None:
+        old_state = torch.random.get_rng_state()
+        torch.manual_seed(seed)
+        X = torch.rand([1, n, input_dim])
+        torch.random.set_rng_state(old_state)
+    else:
+        X = torch.rand([1, n, input_dim])
+    return X
 
 # Random especifics
 def update_random_observations(best_Random):
@@ -138,7 +182,7 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 2
+N_BATCH = 150
 simulator = Alpine2(n_nodes=n_nodes)
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
@@ -156,9 +200,10 @@ if False:
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
-run_Random =  True
-run_EI = True
 run_EIQN = True
+run_EI = True
+run_KG = False
+run_Random = True
 
 if len(sys.argv) == 3:
     first_trial = int(sys.argv[1])
@@ -189,6 +234,13 @@ if len(sys.argv) > 1:
             mll_EI, model_EI = initialize_model(X_EI, fX_EI)
             best_value_EI = fX_EI.max().item()
             best_observed_EI.append(best_value_EI)
+        if run_KG:
+            best_observed_KG = []
+            X_KG = X.clone()
+            fX_KG = output_for_EI(simulator_output_at_X)
+            mll_KG, model_KG = initialize_model_KG(X_KG, fX_KG)
+            best_value_KG = fX_KG.max().item()
+            best_observed_KG.append(best_value_KG)
         if run_Random:
             best_observed_Random = []
             best_observed_Random.append(output_for_EI(simulator_output_at_X).max().item())
@@ -248,6 +300,25 @@ if len(sys.argv) > 1:
                 
                 print('Best value so far found the EI policy: ' + str(best_value_EI) )
                 np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
+                
+            if run_KG:
+                fit_gpytorch_model(mll_KG)
+                KG = qKnowledgeGradient(model=model_KG)
+                posterior_mean_KG = GPPosteriorMean(model=model_KG)
+                
+                new_x_KG = optimize_KG_and_get_suggested_point(KG)
+                new_fx_KG = output_for_EI(simulator.evaluate(new_x_KG))
+                
+                X_KG = torch.cat([X_KG, new_x_KG], 1)
+                fX_KG = torch.cat([fX_KG, new_fx_KG], 1)
+                
+                mll_KG, model_KG = initialize_model_KG(X_KG, fX_KG, model_KG.state_dict())   
+                
+                best_value_KG = fX_KG.max().item()
+                best_observed_KG.append(best_value_KG)
+                
+                print('Best value so far found the KG policy: ' + str(best_value_KG) )
+                np.savetxt(results_folder + test_problem + '_KG_' + str(trial) + '.txt', np.atleast_1d(best_observed_KG))
                 
             if run_Random:
                 best_observed_Random = update_random_observations(best_observed_Random)
