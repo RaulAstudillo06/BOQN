@@ -16,7 +16,7 @@ project_path = script_dir[:-5]
 # Simulator setup
 from alpine2 import Alpine2
 from dag import DAG
-n_nodes = 6
+n_nodes = 4
 input_dim = n_nodes
 test_problem = 'alpine2_' + str(n_nodes)
 results_folder = project_path + '/experiments_results/' + test_problem + '/'
@@ -72,22 +72,25 @@ def initialize_model(X, Y, Yvar=None, state_dict=None):
         model.load_state_dict(state_dict)
     return mll, model
 
+# MVES especifics
+from botorch.acquisition import qMaxValueEntropy
+from botorch.utils import draw_sobol_samples
+
 # KG especifics
+from botorch.acquisition import qKnowledgeGradient
+
 def initialize_model_KG(X, Y, Yvar=None, state_dict=None):
     # define model
     X_copy = X[0, ...]
     Y_copy = Y[0, ...]
-    print(X_copy.shape)
-    print(Y_copy.shape)
+    #print(X_copy.shape)
+    #print(Y_copy.shape)
     model = FixedNoiseGP(X_copy, Y_copy, torch.ones(Y_copy.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     # load state dict if it is passed
     if state_dict is not None:
         model.load_state_dict(state_dict)
     return mll, model
-
-from botorch.acquisition import qKnowledgeGradient
-#from custom_knowledge_gradient import KnowledgeGradient
 
 def optimize_KG_and_get_suggested_point(acq_func):
     """Optimizes the KG acquisition function, and returns a new candidate."""
@@ -200,10 +203,11 @@ if False:
 if not os.path.exists(results_folder) :
             os.makedirs(results_folder)
 
-run_EIQN = True
-run_EI = True
-run_KG = False
-run_Random = True
+run_EIQN = False
+run_EI = False
+run_MVES = False
+run_KG = True
+run_Random = False
 
 if len(sys.argv) == 3:
     first_trial = int(sys.argv[1])
@@ -233,7 +237,14 @@ if len(sys.argv) > 1:
             fX_EI = output_for_EI(simulator_output_at_X)
             mll_EI, model_EI = initialize_model(X_EI, fX_EI)
             best_value_EI = fX_EI.max().item()
-            best_observed_EI.append(best_value_EI)
+            best_observed_EI.append(best_value_EI)  
+        if run_MVES:
+            best_observed_MVES = []
+            X_MVES = X.clone()
+            fX_MVES = output_for_EI(simulator_output_at_X)
+            mll_MVES, model_MVES = initialize_model_KG(X_MVES, fX_MVES)
+            best_value_MVES = fX_MVES.max().item()
+            best_observed_MVES.append(best_value_MVES)
         if run_KG:
             best_observed_KG = []
             X_KG = X.clone()
@@ -301,9 +312,29 @@ if len(sys.argv) > 1:
                 print('Best value so far found the EI policy: ' + str(best_value_EI) )
                 np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
                 
+            if run_MVES:
+                fit_gpytorch_model(mll_MVES)
+                candidate_set = torch.squeeze(draw_sobol_samples(bounds, 200*input_dim, BATCH_SIZE))
+                MVES = qMaxValueEntropy(model_MVES, candidate_set)
+                posterior_mean_MVES = GPPosteriorMean(model=model_MVES)
+                
+                new_x_MVES = optimize_acqf_and_get_suggested_point(MVES, posterior_mean_MVES)
+                new_fx_MVES = output_for_EI(simulator.evaluate(new_x_MVES))
+                
+                X_MVES = torch.cat([X_MVES, new_x_MVES], 1)
+                fX_MVES = torch.cat([fX_MVES, new_fx_MVES], 1)
+                
+                mll_MVES, model_MVES = initialize_model_KG(X_MVES, fX_MVES, model_MVES.state_dict())   
+                
+                best_value_MVES = fX_MVES.max().item()
+                best_observed_MVES.append(best_value_MVES)
+                
+                print('Best value so far found the MVES policy: ' + str(best_value_MVES) )
+                np.savetxt(results_folder + test_problem + '_MVES_' + str(trial) + '.txt', np.atleast_1d(best_observed_MVES))
+                
             if run_KG:
                 fit_gpytorch_model(mll_KG)
-                KG = qKnowledgeGradient(model=model_KG)
+                KG = qKnowledgeGradient(model=model_KG, num_fantasies=16)
                 posterior_mean_KG = GPPosteriorMean(model=model_KG)
                 
                 new_x_KG = optimize_KG_and_get_suggested_point(KG)
