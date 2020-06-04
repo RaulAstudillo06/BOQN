@@ -10,7 +10,7 @@ class Ackley:
         self.c = 2 * math.pi
               
     def evaluate(self, X):
-        print(X)
+        #print(X)
         a = self.a
         b = self.b
         c = self.c
@@ -21,5 +21,5 @@ class Ackley:
             output[..., 1] += torch.cos(c * X_scaled[..., i])
         output /= self.input_dim
         output[..., 2] = a * torch.exp(-b * (torch.sqrt(output[..., 0]))) + torch.exp(output[..., 1]) - a - math.e
-        print(output)   
+        #print(output)   
         return output
