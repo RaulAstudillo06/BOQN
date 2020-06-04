@@ -16,7 +16,7 @@ project_path = script_dir[:-5]
 from queues_in_series import queues_in_series
 from dag import DAG
 simulator_seed = 1
-n_queues = 5
+n_queues = 4
 n_nodes = n_queues
 input_dim = n_queues
 test_problem = 'queues_in_series_' + str(n_queues)
@@ -30,11 +30,11 @@ dag= DAG(dag_as_list)
 
 active_input_indices = []
 for k in range(input_dim):
-    active_input_indices.append([j for j in range(k + 1)])  
+    active_input_indices.append([k])  
 
 main_input_indices = []
 for k in range(input_dim):
-    main_input_indices.append([j for j in range(k + 1)])
+    main_input_indices.append([k])
 
 # EI-QN especifics
 from botorch.acquisition.objective import GenericMCObjective
@@ -73,6 +73,38 @@ def initialize_model(X, Y, Yvar=None, state_dict=None):
     if state_dict is not None:
         model.load_state_dict(state_dict)
     return mll, model
+
+# KG especifics
+from botorch.acquisition import qKnowledgeGradient
+
+def initialize_model_KG(X, Y, Yvar=None, state_dict=None):
+    # define model
+    X_copy = X[0, ...]
+    Y_copy = Y[0, ...]
+    #print(X_copy.shape)
+    #print(Y_copy.shape)
+    model = FixedNoiseGP(X_copy, Y_copy, torch.ones(Y_copy.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    # load state dict if it is passed
+    if state_dict is not None:
+        model.load_state_dict(state_dict)
+    return mll, model
+
+def optimize_KG_and_get_suggested_point(acq_func):
+    """Optimizes the KG acquisition function, and returns a new candidate."""
+    
+    candidate, _ = custom_optimize_acqf(
+        acq_function=acq_func,
+        bounds=bounds,
+        q=BATCH_SIZE,
+        num_restarts=10*input_dim,
+        raw_samples=100*input_dim,
+        #options={'disp': True, 'iprint': 101},
+    )
+    
+    new_x = candidate.detach()
+    new_x =  new_x.view([1, BATCH_SIZE, input_dim])
+    return new_x
 
 # Random especifics
 def update_random_observations(best_Random):
@@ -143,22 +175,21 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 25 * input_dim
+N_BATCH = 100
 simulator = queues_in_series(nqueues=n_queues, arrival_rate=1., seed=simulator_seed)
 if not os.path.exists(results_folder):
     os.makedirs(results_folder)
     
-run_Random = True
-run_EI = True
 run_EIQN = True
+run_EI = True
+run_KG = True
+run_Random = True
 if len(sys.argv) > 1:
     trial = int(sys.argv[1])
     
-    # call helper functions to generate initial training data and initialize model
-    X = generate_initial_X(n=2*(input_dim+1), seed=trial)
+    # call helper functions to generate initial training data and initialize model    
+    X = generate_initial_X(n=2, seed=trial)
     simulator_output_at_X = simulator.evaluate(X)
-    #print(X)
-    #print(simulator_output_at_X)
     
     if run_EIQN:
         best_observed_EIQN = []
@@ -173,6 +204,13 @@ if len(sys.argv) > 1:
         mll_EI, model_EI = initialize_model(X_EI, fX_EI)
         best_value_EI = fX_EI.max().item()
         best_observed_EI.append(best_value_EI)
+    if run_KG:
+            best_observed_KG = []
+            X_KG = X.clone()
+            fX_KG = output_for_EI(simulator_output_at_X)
+            mll_KG, model_KG = initialize_model_KG(X_KG, fX_KG)
+            best_value_KG = fX_KG.max().item()
+            best_observed_KG.append(best_value_KG)
     if run_Random:
         best_observed_Random = []
         best_observed_Random.append(output_for_EI(simulator_output_at_X).max().item())
@@ -205,7 +243,6 @@ if len(sys.argv) > 1:
             t1 = time.time()
             print('Optimizing the acquisition function took: ' + str(t1 - t0))
             new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
-            print(fX_EIQN.shape)
             
             X_EIQN = torch.cat([X_EIQN, new_x_EIQN], 1)
             fX_EIQN = torch.cat([fX_EIQN, new_fx_EIQN], 1)
@@ -234,6 +271,25 @@ if len(sys.argv) > 1:
             
             print('Best value so far found the EI policy: ' + str(best_value_EI) )
             np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
+            
+        if run_KG:
+                fit_gpytorch_model(mll_KG)
+                KG = qKnowledgeGradient(model=model_KG, num_fantasies=8)
+                posterior_mean_KG = GPPosteriorMean(model=model_KG)
+                
+                new_x_KG = optimize_KG_and_get_suggested_point(KG)
+                new_fx_KG = output_for_EI(simulator.evaluate(new_x_KG))
+                
+                X_KG = torch.cat([X_KG, new_x_KG], 1)
+                fX_KG = torch.cat([fX_KG, new_fx_KG], 1)
+                
+                mll_KG, model_KG = initialize_model_KG(X_KG, fX_KG, model_KG.state_dict())   
+                
+                best_value_KG = fX_KG.max().item()
+                best_observed_KG.append(best_value_KG)
+                
+                print('Best value so far found the KG policy: ' + str(best_value_KG) )
+                np.savetxt(results_folder + test_problem + '_KG_' + str(trial) + '.txt', np.atleast_1d(best_observed_KG))
             
         if run_Random:
             best_observed_Random = update_random_observations(best_observed_Random)
