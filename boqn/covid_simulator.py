@@ -14,8 +14,6 @@ class CovidSimulator:
         self.seed =  seed
         
     def evaluate(self, X):
-        #X[0, 0, :] = torch.tensor([.82945, .87082])
-        #X[0, 1, :] = torch.tensor([.87945, .84082])
         X_scaled = 199. * X + 1. 
         input_shape = X_scaled.shape
         output = torch.zeros(input_shape[:-1] + torch.Size([3 * self.n_periods]))
@@ -28,5 +26,7 @@ class CovidSimulator:
                     output[i, j, 3 * t] = states[t, 0]
                     output[i, j, 3 * t + 1] = states[t, 1]
                     output[i, j, 3 * t + 2] = losses[t]
+        #print(X)
+        #print(output)
         return output
                 

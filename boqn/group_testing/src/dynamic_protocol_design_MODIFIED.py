@@ -7,28 +7,11 @@ import sys
 from copy import deepcopy
 import random
 
-def test_properties(prevalence, group_size, FNR = 0.3, FPR = 0.1, n_households = 10000, nreps = 50):
-    # To make the code accurate, use n_households = 22500 and n_reps = 100
-    # To make it faster use the default parameters
-    random.seed(1)
-    np.random.seed(1)
-    
-    initial_prevalence = eval_r(match_r, prevalence)
-    pop = Population(n_households=n_households, # Should be big relative to the largest group size
-                      household_size_dist=US_dist,
-                      target_prevalence=prevalence,
-                      disease_length=0,
-                      time_until_symptomatic=0,
-                      non_quarantine_alpha=0, # not needed for present purposes
-                      daily_secondary_attack_rate=0.374,
-                      fatality_pct=0,
-                      daily_outside_infection_pct=0,
-                      outside_symptomatic_prob=0,
-                      initial_quarantine=0,
-                      initial_prevalence=initial_prevalence)
 
+
+def test_properties(pop, group_size, FNR = 0.3, FPR = 0.1, nreps = 500):
     group_test = MatrixGroupTest(group_size, FNR, FPR, fnr_at_swab_level=True)
-    QFNR, QFPR, tests_per_person, quarantines_per_person = StaticSimulation(pop, group_test).sim(nreps)
+    QFNR, QFPR, tests_per_person, quarantines_per_person = StaticSimulation(pop,group_test).sim(nreps)
 
     return QFNR, QFPR, tests_per_person
 
@@ -137,7 +120,8 @@ def node(state, group_size, costs = {'test' : .001, 'infections' : 1, 'quarantin
     loss += people_in_quarantine * costs['quarantine']
 
     if verbose:
-        print_state(state, 'Start of Week, After test: ')
+        print('People in Quarantine {}'.format(people_in_quarantine))
+        print_state(state, 'After test: ')
 
     # Fraction of people that are susceptible in the free population
     fraction_susceptible = new_state['FS'] / (new_state['FS'] + new_state['FI'] + new_state['FR'])
@@ -151,16 +135,17 @@ def node(state, group_size, costs = {'test' : .001, 'infections' : 1, 'quarantin
     state['R'] += new_recoveries
 
     loss += new_infections * costs['infections']
+    if verbose:
+        print('new infections {}'.format(new_infections))
     
-
     return deepcopy(state), loss
 
 
 def print_state(state,preamble='',verbose=False):
 
-    free = state['FI'] + state['FS'] + state['FR']
-    infected  = state['FI'] + state['QI1'] + state['QI2']
-    recovered = state['FR'] + state['QR1'] + state['QR2']
+    #free = state['FI'] + state['FS'] + state['FR']
+    #infected  = state['FI'] + state['QI1'] + state['QI2']
+    #recovered = state['FR'] + state['QR1'] + state['QR2']
     print('{} Infected={:.1f}%, RecoveredOrDead={:.1f}%'.format(
         preamble,state['I']*100,state['R']*100))
 
@@ -170,10 +155,52 @@ def print_state(state,preamble='',verbose=False):
     assert (np.isclose(sum([p[1] for p in state.items()]), 1.))
 
 
-if __name__ == '__main__':
-    prevalence = float(sys.argv[1])
-    group_sizes = [int(sys.argv[idx]) for idx in range(2,6)]
+
+def main1():
+    prevalence = 0.01
+    group_sizes = [100, 100, 100]
     print("Beginning simulation with prevalence {} and group sizes {}".format(prevalence, group_sizes))
-    state, loss = simple_simulation(group_sizes, prevalence)
+    state, loss = simple_simulation(group_sizes, prevalence, verbose=True)
+    print('Final state')
     print(state)
+    print('Final loss')
     print(loss)
+    print(np.sum(loss))
+
+
+def main2():
+    prevalence = 0.01
+    g = range(3,100,1)
+    loss = [0]*len(g)
+    for i in range(len(g)):
+        group_sizes = [g[i], 100, 100]
+        state, loss = simple_simulation(group_sizes, prevalence, verbose=False)
+        print('group size={} loss={:.2f}'.format(g[i], 100*np.sum(loss)))
+        print(loss)
+
+if __name__ == '__main__':
+    group_size = range(3,10,1)
+
+    # To make the code accurate, use n_households = 22500 and n_reps = 100
+    # To make it faster use the default parameters
+    prevalence = 0.01
+    n_households = 1000
+    initial_prevalence = eval_r(match_r, prevalence)
+    pop = Population(n_households=n_households,  # Should be big relative to the largest group size
+                     household_size_dist=[1.],
+                     target_prevalence=prevalence,
+                     disease_length=0,
+                     time_until_symptomatic=0,
+                     non_quarantine_alpha=0,  # not needed for present purposes
+                     daily_secondary_attack_rate=0.374,
+                     fatality_pct=0,
+                     daily_outside_infection_pct=0,
+                     outside_symptomatic_prob=0,
+                     initial_quarantine=0,
+                     initial_prevalence=initial_prevalence)
+
+
+    for g in group_size:
+        QFNR, QFPR, tests_per_person = test_properties(pop,g)
+        print('g={} QFNR={}'.format(g,QFNR))
+

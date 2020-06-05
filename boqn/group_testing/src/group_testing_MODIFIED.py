@@ -72,8 +72,15 @@ class MatrixGroupTest:
     def test(self, population):
         # Test the entire population.  Runs _test_group several times and aggregates results.
         avg_household_size = population.get_avg_household_size()
-        household_group_size = ceil(self.group_size / float(avg_household_size))
+        household_group_size = self.group_size / float(avg_household_size)
+        fractional_part = household_group_size - floor(household_group_size)
+        if np.random.binomial(1,fractional_part):
+            household_group_size = ceil(household_group_size)
+        else:
+            household_group_size = floor(household_group_size)
+        assert(household_group_size > 0)
         household_matrix_size = household_group_size ** 2
+
 
         self.was_swab_successful = {}
 
@@ -349,3 +356,5 @@ class GollierGroupTest:
                         'num_negative_grps': num_negative_grps}
         
         return test_results, groups, grp_test_data 
+
+
