@@ -16,7 +16,7 @@ project_path = script_dir[:-5]
 # Simulator setup
 from alpine2 import Alpine2
 from dag import DAG
-n_nodes = 4
+n_nodes = 6
 input_dim = n_nodes
 test_problem = 'alpine2_' + str(n_nodes)
 results_folder = project_path + '/experiments_results/' + test_problem + '/'
@@ -185,7 +185,7 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 150
+N_BATCH = 100
 simulator = Alpine2(n_nodes=n_nodes)
 def my_objective(X):
     print(g_mapping(simulator.evaluate(X))[..., 0].shape)
@@ -334,7 +334,7 @@ if len(sys.argv) > 1:
                 
             if run_KG:
                 fit_gpytorch_model(mll_KG)
-                KG = qKnowledgeGradient(model=model_KG, num_fantasies=16)
+                KG = qKnowledgeGradient(model=model_KG, num_fantasies=8)
                 posterior_mean_KG = GPPosteriorMean(model=model_KG)
                 
                 new_x_KG = optimize_KG_and_get_suggested_point(KG)

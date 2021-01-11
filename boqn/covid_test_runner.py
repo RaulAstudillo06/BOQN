@@ -173,7 +173,7 @@ def generate_initial_X(n, seed=None):
     return X
 
 # Run BO loop times
-N_BATCH = 100
+N_BATCH = 10
 simulator_seed = 1
 from covid_simulator import CovidSimulator
 simulator = CovidSimulator(n_periods=n_periods, seed=simulator_seed)
@@ -181,8 +181,8 @@ simulator = CovidSimulator(n_periods=n_periods, seed=simulator_seed)
 if not os.path.exists(results_folder):
     os.makedirs(results_folder)
 
-run_EIQN = False
-run_EI = False
+run_EIQN = True
+run_EI = True
 run_KG = True
 run_Random = False
 if len(sys.argv) == 3:
@@ -202,12 +202,14 @@ if len(sys.argv) > 1:
         #print(simulator_output_at_X)
         
         if run_EIQN:
+            opt_time_EIQN = 0.
             best_observed_EIQN = []
             X_EIQN = X.clone()
             fX_EIQN = output_for_EIQN(simulator_output_at_X)
             best_value_EIQN = g_mapping(fX_EIQN).max().item()
             best_observed_EIQN.append(best_value_EIQN)
         if run_EI:
+            opt_time_EI = 0.
             best_observed_EI = []
             X_EI = X.clone()
             fX_EI = output_for_EI(simulator_output_at_X)
@@ -215,6 +217,7 @@ if len(sys.argv) > 1:
             best_value_EI = fX_EI.max().item()
             best_observed_EI.append(best_value_EI)  
         if run_KG:
+            opt_time_KG = 0.
             best_observed_KG = []
             X_KG = X.clone()
             fX_KG = output_for_EI(simulator_output_at_X)
@@ -233,8 +236,6 @@ if len(sys.argv) > 1:
             if run_EIQN:
                 t0 = time.time()
                 model_EIQN = NetworkGP(dag, X_EIQN, fX_EIQN, active_input_indices=active_input_indices, main_input_indices=main_input_indices)
-                t1 = time.time()
-                print('Training the model took: ' + str(t1 - t0))
                 qmc_sampler = SobolQMCNormalSampler(num_samples=MC_SAMPLES)
                 EIQN = qExpectedImprovement(
                     model=model_EIQN, 
@@ -248,9 +249,9 @@ if len(sys.argv) > 1:
                     sampler=qmc_sampler,
                     objective=g,
                 )
-                t0 = time.time()
                 new_x_EIQN = optimize_acqf_and_get_suggested_point(EIQN, posterior_mean_EIQN)
                 t1 = time.time()
+                opt_time_EIQN += t1 - t0
                 print('Optimizing the acquisition function took: ' + str(t1 - t0))
                 new_fx_EIQN = output_for_EIQN(simulator.evaluate(new_x_EIQN))
                 
@@ -263,11 +264,14 @@ if len(sys.argv) > 1:
                 np.savetxt(results_folder + test_problem + '_EIQN_' + str(trial) + '.txt', np.atleast_1d(best_observed_EIQN))
                 
             if run_EI:
+                t0 = time.time()
                 fit_gpytorch_model(mll_EI)
                 EI = ExpectedImprovement(model=model_EI, best_f=best_value_EI)
                 posterior_mean_EI = GPPosteriorMean(model=model_EI)
-                
+
                 new_x_EI = optimize_acqf_and_get_suggested_point(EI, posterior_mean_EI)
+                t1 = time.time()
+                opt_time_EI += t1 - t0
                 new_fx_EI = output_for_EI(simulator.evaluate(new_x_EI))
                 
                 X_EI = torch.cat([X_EI, new_x_EI], 1)
@@ -282,11 +286,14 @@ if len(sys.argv) > 1:
                 np.savetxt(results_folder + test_problem + '_EI_' + str(trial) + '.txt', np.atleast_1d(best_observed_EI))
                 
             if run_KG:
+                t0 = time.time()
                 fit_gpytorch_model(mll_KG)
                 KG = qKnowledgeGradient(model=model_KG, num_fantasies=8)
                 posterior_mean_KG = GPPosteriorMean(model=model_KG)
                 
                 new_x_KG = optimize_KG_and_get_suggested_point(KG)
+                t1 = time.time()
+                opt_time_KG += t1 - t0
                 new_fx_KG = output_for_EI(simulator.evaluate(new_x_KG))
                 
                 X_KG = torch.cat([X_KG, new_x_KG], 1)
@@ -305,3 +312,7 @@ if len(sys.argv) > 1:
                 print('Best value so far found the Random policy: ' + str(best_observed_Random[-1]))
                 np.savetxt(results_folder + test_problem + '_Random_' + str(trial) + '.txt', np.atleast_1d(best_observed_Random))
             print('')
+
+print(opt_time_EIQN)
+print(opt_time_EI)
+print(opt_time_KG)
