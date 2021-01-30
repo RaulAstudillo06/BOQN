@@ -158,7 +158,7 @@ def optimize_acqf_and_get_suggested_point(acq_func, posterior_mean):
     return new_x
 
 # Run BO loop times
-N_BATCH = 5
+N_BATCH = 100
 
 if not os.path.exists(results_folder):
     os.makedirs(results_folder)
