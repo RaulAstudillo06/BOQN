@@ -187,6 +187,7 @@ def generate_initial_X(n, seed=None):
 
 # Run BO loop times
 N_BATCH = 260
+init_batch_id = 1
 
 if not os.path.exists(results_folder) :
     os.makedirs(results_folder)
@@ -238,19 +239,29 @@ if len(sys.argv) > 1:
             best_value_EI = fX_EI.max().item()
             best_observed_EI.append(best_value_EI)
         if run_KG:
-            best_observed_KG = []
-            running_times_KG = []
-            X_KG = X.clone()
-            fX_KG = output_for_EI(simulator_output_at_X)
+            try:
+                best_observed_KG = list(np.loadtxt(results_folder + test_problem + '_KG_' + str(trial) + '.txt'))
+                running_times_KG = list(np.loadtxt(results_folder + 'running_times/' + test_problem + '_rt_KG_' + str(trial) + '.txt'))
+                best_value_KG = torch.tensor(best_observed_KG[-1])
+                X_KG = torch.tensor(np.loadtxt(results_folder + 'X/' + test_problem + '_X_KG_' + str(trial) + '.txt'))
+                fX_KG = torch.tensor(np.loadtxt(results_folder + 'Y/' + test_problem + '_Y_KG_' + str(trial) + '.txt')).unsqueeze(dim=-1)
+                print(fX_KG.shape)
+                init_batch_id = len(best_observed_KG)
+                print("Restarting experiment from available data.")
+            except:
+                best_observed_KG = []
+                running_times_KG = []
+                X_KG = X.clone()
+                fX_KG = output_for_EI(simulator_output_at_X)
+                best_value_KG = fX_KG.max().item()
+                best_observed_KG.append(best_value_KG)
             mll_KG, model_KG = initialize_model(X_KG, fX_KG)
-            best_value_KG = fX_KG.max().item()
-            best_observed_KG.append(best_value_KG)
         if run_Random:
             best_observed_Random = []
             best_observed_Random.append(output_for_EI(simulator_output_at_X).max().item())
         
         # run N_BATCH rounds of BayesOpt after the initial random batch
-        for iteration in range(1, N_BATCH + 1):
+        for iteration in range(init_batch_id, N_BATCH + 1):
             print('Experiment: ' + test_problem)
             print('Replication id: ' + str(trial))
             print('Iteration: ' + str(iteration))
