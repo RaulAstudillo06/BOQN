@@ -24,24 +24,16 @@ class NetworkGP(Model):
     r"""
     """
     
-    def __init__(self, dag, train_X, train_Y, train_Yvar=None, active_input_indices=None, main_input_indices=None, node_GPs=None, normalization_constant_lower=None, normalization_constant_upper=None) -> None:
+    def __init__(self, train_X, train_Y, dag, active_input_indices, train_Yvar=None, node_GPs=None, normalization_constant_lower=None, normalization_constant_upper=None) -> None:
         r"""
         """
+        self.train_X = train_X
+        self.train_Y = train_Y
         self.dag = dag
         self.n_nodes = dag.get_n_nodes()
         self.root_nodes = dag.get_root_nodes()
-        self.train_X = train_X
-        self.train_Y = train_Y
-        self.train_Yvar = train_Yvar
         self.active_input_indices = active_input_indices
-        self.main_input_indices = main_input_indices
-        self.main_input_indices_rescaled = [[] for k in range(self.n_nodes)]
-
-        for k in range(self.n_nodes):
-            for i in range(len(self.main_input_indices[k])):
-                for j in range(len(self.active_input_indices[k])):
-                    if self.main_input_indices[k][i] == self.active_input_indices[k][j]:
-                        self.main_input_indices_rescaled[k].append(deepcopy(j))
+        self.train_Yvar = train_Yvar
                         
         if node_GPs is not None:
             self.node_GPs = node_GPs
@@ -60,7 +52,7 @@ class NetworkGP(Model):
                     train_X_node_k = train_X
                 train_Y_node_k = train_Y[..., [k]]
                 #self.node_GPs[k] = SingleTaskGP(train_X=train_X_node_k, train_Y=train_Y_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
-                self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
+                self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1))
                 self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
                 fit_gpytorch_model(self.node_mlls[k])
                 
@@ -73,15 +65,11 @@ class NetworkGP(Model):
                         aux[..., j] = (aux[..., j] - self.normalization_constant_lower[k][j])/(self.normalization_constant_upper[k][j] - self.normalization_constant_lower[k][j])
                     train_X_node_k = torch.cat([train_X[..., self.active_input_indices[k]], aux], -1)
                     train_Y_node_k = train_Y[..., [k]]
-                    aux_model =  FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))  
+                    aux_model =  FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1))  
                     batch_shape = aux_model._aug_batch_shape
                     #self.node_GPs[k] = SingleTaskGP(train_X=train_X_node_k, train_Y=train_Y_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
                     #self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([1])))
-                    if len(self.main_input_indices[k]) < len(self.active_input_indices[k]):
-                        covar_module_node_k = ScaleKernel(NodeMaternKernel(self.main_input_indices_rescaled[k], len(self.dag.get_parent_nodes(k)), train_X_node_k, train_Y_node_k, nu=2.5, ard_num_dims=train_X_node_k.shape[-1], batch_shape=batch_shape, lengthscale_prior=GammaPrior(3.0, 6.0)), batch_shape=batch_shape, outputscale_prior=GammaPrior(2.0, 0.15))
-                        self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, covar_module=covar_module_node_k, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
-                    else:
-                        self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
+                    self.node_GPs[k] = FixedNoiseGP(train_X=train_X_node_k, train_Y=train_Y_node_k, train_Yvar=torch.ones(train_Y_node_k.shape) * 1e-6, outcome_transform=Standardize(m=1, batch_shape=torch.Size([])))
                     self.node_mlls[k] = ExactMarginalLogLikelihood(self.node_GPs[k].likelihood, self.node_GPs[k])
                     fit_gpytorch_model(self.node_mlls[k])
                 
@@ -144,7 +132,7 @@ class NetworkGP(Model):
                 Y_node_k = Y[..., [k]]
                 fantasy_models[k] = self.node_GPs[k].condition_on_observations(X_node_k, Y_node_k, noise=torch.ones(Y_node_k.shape[1:]) * 1e-6)
 
-        return NetworkGP(dag=self.dag, train_X=X, train_Y=Y, active_input_indices=self.active_input_indices, main_input_indices=self.main_input_indices, node_GPs=fantasy_models, normalization_constant_lower=self.normalization_constant_lower, normalization_constant_upper=self.normalization_constant_upper)
+        return NetworkGP(dag=self.dag, train_X=X, train_Y=Y, active_input_indices=self.active_input_indices, node_GPs=fantasy_models, normalization_constant_lower=self.normalization_constant_lower, normalization_constant_upper=self.normalization_constant_upper)
         
         
 class NetworkMultivariateNormal(Posterior):
