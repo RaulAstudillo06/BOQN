@@ -67,6 +67,7 @@ __pycache__/
 # Experimental results
 experiments/
 experiments_results/
+experiments_results_icml2021/
 
 # Plots
 *.png
