@@ -33,6 +33,7 @@ def optimize_acqf_and_get_suggested_point(
         num_restarts=10*input_dim,
         raw_samples=100*input_dim,
         baseline_initial_conditions=baseline_candidate,
+        options={"batch_limit": 5},
         #options={'disp': True, 'iprint': 101},
     )
     if baseline_candidate is not None:
