@@ -14,6 +14,6 @@ class Rosenbrock:
         for i in range(1, self.n_nodes):
             output[..., i] = 100.0 *  (X_scaled[..., i + 1] - X_scaled[..., i] ** 2) ** 2  + (X_scaled[..., i] - 1.0) ** 2
             output[..., i] += output[..., i - 1]
-        output = -output    
+        output = -output
         return output
 
