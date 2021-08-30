@@ -162,7 +162,7 @@ def get_new_suggested_point(
         model = NetworkGP(train_X=X, train_Y=network_output_at_X, dag=dag,
                           active_input_indices=active_input_indices)
         # Sampler
-        qmc_sampler = SobolQMCNormalSampler(num_samples=512)
+        qmc_sampler = SobolQMCNormalSampler(num_samples=128)
         # Acquisition function
         acquisition_function = qExpectedImprovement(
             model=model,
@@ -179,7 +179,7 @@ def get_new_suggested_point(
     elif algo == "EICF":
         mll, model = initialize_gp_model(X=X, Y=network_output_at_X)
         fit_gpytorch_model(mll)
-        qmc_sampler = SobolQMCNormalSampler(num_samples=512)
+        qmc_sampler = SobolQMCNormalSampler(num_samples=128)
         acquisition_function = qExpectedImprovement(
             model=model,
             best_f=objective_at_X.max().item(),
