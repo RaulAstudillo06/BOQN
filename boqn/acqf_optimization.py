@@ -20,6 +20,7 @@ def optimize_acqf_and_get_suggested_point(
             q=batch_size,
             num_restarts=10*input_dim,
             raw_samples=100*input_dim,
+            options={"batch_limit": 5},
         )
     
         baseline_candidate = baseline_candidate.detach().view(torch.Size([1, batch_size, input_dim]))
