@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor
+from botorch.acquisition.knowledge_gradient import qKnowledgeGradient
 from botorch.optim import optimize_acqf
 from custom_acqf_optimizer import custom_optimize_acqf
 
@@ -22,8 +23,12 @@ def optimize_acqf_and_get_suggested_point(
             raw_samples=100*input_dim,
             options={"batch_limit": 5},
         )
-    
-        baseline_candidate = baseline_candidate.detach().view(torch.Size([1, batch_size, input_dim]))
+
+        if isinstance(acq_func, qKnowledgeGradient):
+            augmented_q_batch_size = acq_func.get_augmented_q_batch_size(batch_size)
+            baseline_candidate = baseline_candidate.detach().repeat(1, augmented_q_batch_size, 1)
+        else:
+            baseline_candidate = baseline_candidate.detach().view(torch.Size([1, batch_size, input_dim]))
     else:
         baseline_candidate = None
     

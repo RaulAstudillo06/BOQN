@@ -203,7 +203,7 @@ def get_new_suggested_point(
         fit_gpytorch_model(mll)
         acquisition_function = qKnowledgeGradient(
             model=model, num_fantasies=8)
-        posterior_mean_function = None
+        posterior_mean_function = GPPosteriorMean(model=model)
 
     new_x = optimize_acqf_and_get_suggested_point(
         acq_func=acquisition_function,
